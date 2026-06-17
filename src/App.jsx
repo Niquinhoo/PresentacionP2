@@ -1268,6 +1268,129 @@ private void colorearBotonesMesas(List<Mesa> listaMesas) {
     }
 }`
       }
+    ],
+    abm: [
+      {
+        title: 'Visualización de Catálogo',
+        actor: 'ProductosPanel (EDT)',
+        action: 'El administrador accede a la sección de gestión de productos. Se muestra el listado completo consultando la base de datos de forma dinámica.',
+        query: 'SELECT p.id_producto, p.nombre, p.precio, p.stock, p.activo, c.nombre AS categoria FROM productos p JOIN categorias c ON p.id_categoria = c.id_categoria ORDER BY p.id_producto',
+        icon: Monitor,
+        image: 'ProductosABM/ProductosActuales-1.png',
+        snippet: `// vistas/paneles/ProductosPanel.java
+private void cargarProductosTabla() {
+    List<Producto> lista = productoService.listarTodos();
+    DefaultTableModel modelo = (DefaultTableModel) tblProductos.getModel();
+    modelo.setRowCount(0);
+    for (Producto p : lista) {
+        modelo.addRow(new Object[]{
+            p.getIdProducto(), p.getNombre(), p.getPrecio(), p.getStock(), p.isActivo() ? "Activo" : "Inactivo"
+        });
+    }
+}`
+      },
+      {
+        title: 'Formulario de Alta',
+        actor: 'AltaProductoDialog (JDialog)',
+        action: 'Al presionar "Nuevo", se despliega un diálogo modal para ingresar los datos del producto (nombre, precio, stock y categoría).',
+        query: 'N/A (Carga de categorías para combobox: SELECT * FROM categorias)',
+        icon: FileCode,
+        image: 'ProductosABM/AltaProducto.png',
+        snippet: `// vistas/paneles/ProductosPanel.java
+private void btnNuevoActionPerformed() {
+    // Instancia el modal de alta pasándole el parent y seleccionando modo inserción
+    AltaProductoDialog dialog = new AltaProductoDialog(this.getFrameParent(), true);
+    dialog.setVisible(true);
+    if (dialog.isGuardadoExitoso()) {
+        cargarProductosTabla(); // Refresca grilla Swing
+    }
+}`
+      },
+      {
+        title: 'Inserción en Base de Datos',
+        actor: 'ProductoDAOImpl (Backend)',
+        action: 'El backend procesa la solicitud e inserta el nuevo producto. En caso de éxito, retorna el ID autogenerado por MySQL / TiDB.',
+        query: 'INSERT INTO productos (nombre, precio, stock, id_categoria, activo) VALUES (?, ?, ?, ?, TRUE)',
+        icon: Database,
+        image: 'ProductosABM/AltaProducto.png',
+        snippet: `// com.restaurant.backend.dao.ProductoDAOImpl
+public int insertar(Producto p) throws SQLException {
+    String sql = "INSERT INTO productos (nombre, precio, stock, id_categoria, activo) VALUES (?, ?, ?, ?, ?)";
+    try (Connection conn = ConexionDB.getInstance().getConnection();
+         PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+        ps.setString(1, p.getNombre());
+        ps.setBigDecimal(2, p.getPrecio());
+        ps.setInt(3, p.getStock());
+        ps.setInt(4, p.getIdCategoria());
+        ps.setBoolean(5, p.isActivo());
+        ps.executeUpdate();
+        try (ResultSet rs = ps.getGeneratedKeys()) {
+            if (rs.next()) return rs.getInt(1); // Retorna ID generado
+        }
+    }
+    return -1;
+}`
+      },
+      {
+        title: 'Formulario de Modificación',
+        actor: 'AltaProductoDialog (JDialog)',
+        action: 'Al seleccionar un registro y pulsar "Editar", se cargan los datos actuales en el formulario modal para permitir cambios en precio o stock.',
+        query: 'N/A (Lógica en memoria de Swing)',
+        icon: FileCode,
+        image: 'ProductosABM/ModificacionProducto.png',
+        snippet: `// vistas/paneles/ProductosPanel.java
+private void btnEditarActionPerformed() {
+    int row = tblProductos.getSelectedRow();
+    if (row == -1) return;
+    Producto prod = obtenerProductoSeleccionado(row);
+    // Abre formulario pre-cargado
+    AltaProductoDialog dialog = new AltaProductoDialog(this.getFrameParent(), true, prod);
+    dialog.setVisible(true);
+    if (dialog.isGuardadoExitoso()) {
+        cargarProductosTabla();
+    }
+}`
+      },
+      {
+        title: 'Confirmación de Baja',
+        actor: 'Alerta Gráfica (EDT)',
+        action: 'Para eliminar un producto se selecciona el registro y se presiona "Eliminar". Se levanta un diálogo JOptionPane solicitando confirmar la acción.',
+        query: 'N/A (Interacción local del EDT)',
+        icon: AlertTriangle,
+        image: 'ProductosABM/ConfirmacionBajaProducto.png',
+        snippet: `// vistas/paneles/ProductosPanel.java
+private void btnEliminarActionPerformed() {
+    int row = tblProductos.getSelectedRow();
+    if (row == -1) return;
+    int id = (int) tblProductos.getValueAt(row, 0);
+    int confirm = javax.swing.JOptionPane.showConfirmDialog(
+        this, 
+        "¿Está seguro de eliminar el producto seleccionado?", 
+        "Confirmar Baja de Producto", 
+        javax.swing.JOptionPane.YES_NO_OPTION
+    );
+    if (confirm == javax.swing.JOptionPane.YES_OPTION) {
+        desactivarProducto(id);
+    }
+}`
+      },
+      {
+        title: 'Baja Lógica y Actualización',
+        actor: 'ProductoDAOImpl & EDT',
+        action: 'Se realiza una baja lógica (activo = FALSE) para resguardar la integridad referencial en reportes e históricos. La grilla Swing se actualiza mostrando el estado.',
+        query: 'UPDATE productos SET activo = FALSE WHERE id_producto = ?',
+        icon: CheckCircle2,
+        image: 'ProductosABM/ActualizacionDeEstados-2.png',
+        snippet: `// com.restaurant.backend.dao.ProductoDAOImpl (Baja Lógica)
+public boolean desactivar(int idProducto) throws SQLException {
+    String sql = "UPDATE productos SET activo = FALSE WHERE id_producto = ?";
+    try (Connection conn = ConexionDB.getInstance().getConnection();
+         PreparedStatement ps = conn.prepareStatement(sql)) {
+        ps.setInt(1, idProducto);
+        return ps.executeUpdate() > 0;
+    }
+}`
+      }
     ]
   };
 
@@ -2732,6 +2855,13 @@ private void colorearBotonesMesas(List<Mesa> listaMesas) {
                   style={simFlow === 'liberar' ? { backgroundColor: 'var(--primary)', color: '#000' } : { borderColor: 'var(--border)' }}
                 >
                   Liberar Mesa (Hotfix)
+                </button>
+                <button 
+                  onClick={() => resetSimulator('abm')}
+                  className={`px-4 py-2.5 rounded-xl font-semibold text-sm transition ${simFlow === 'abm' ? 'bg-primary text-black' : 'border border-border text-secondary hover:bg-card-hover'}`}
+                  style={simFlow === 'abm' ? { backgroundColor: 'var(--primary)', color: '#000' } : { borderColor: 'var(--border)' }}
+                >
+                  ABM de Productos
                 </button>
               </div>
 
