@@ -2917,34 +2917,7 @@ public boolean desactivar(int idProducto) throws SQLException {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Left Column: UI Interface capture */}
-                  <div className="space-y-3">
-                    <p className="text-xs text-muted font-bold font-mono uppercase" style={{ color: 'var(--text-muted)' }}>Captura de Interfaz de Usuario:</p>
-                    <div className="bg-code-bg rounded-xl border border-border overflow-hidden relative shadow-md flex items-center justify-center p-2" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
-                      <img
-                        src={`/imgsistema/${flows[simFlow][simStep].image}`}
-                        alt={flows[simFlow][simStep].title}
-                        className="rounded-lg object-contain w-full h-auto max-h-[260px] bg-black"
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                          const parent = e.target.parentElement;
-                          if (!parent.querySelector('.image-error-fallback')) {
-                            const fallback = document.createElement('div');
-                            fallback.className = 'image-error-fallback flex flex-col items-center justify-center p-6 text-center text-muted w-full h-[200px]';
-                            fallback.style.color = 'var(--text-muted)';
-                            fallback.innerHTML = `
-                              <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-10 h-10 text-primary mb-2" style="color:var(--primary);"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                              <p class="text-xs font-semibold text-white">Interfaz: ${flows[simFlow][simStep].image.split('/').pop()}</p>
-                              <p class="text-[10px] mt-0.5 text-muted" style="color:var(--text-muted)">Ruta: /imgsistema/${flows[simFlow][simStep].image}</p>
-                            `;
-                            parent.appendChild(fallback);
-                          }
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Right Column: Code Snippet & Actions */}
+                  {/* Left Column: Code Snippet & Actions */}
                   <div className="space-y-4 flex flex-col justify-between">
                     <div className="space-y-3">
                       <div className="space-y-1">
@@ -2971,10 +2944,37 @@ public boolean desactivar(int idProducto) throws SQLException {
                           <span>java_action_snippet</span>
                           <span>Java / SQL</span>
                         </div>
-                        <pre className="p-3 overflow-auto font-mono text-[10px] text-secondary leading-normal max-h-[160px] bg-code-bg" style={{ color: '#d1c7bd', backgroundColor: 'var(--code-bg)' }}>
+                        <pre className="p-3 overflow-auto font-mono text-[10px] text-secondary leading-normal max-h-[140px] bg-code-bg" style={{ color: '#d1c7bd', backgroundColor: 'var(--code-bg)' }}>
                           <code>{flows[simFlow][simStep].snippet}</code>
                         </pre>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: UI Interface capture */}
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted font-bold font-mono uppercase" style={{ color: 'var(--text-muted)' }}>Captura de Interfaz de Usuario:</p>
+                    <div className="bg-code-bg rounded-xl border border-border overflow-hidden relative shadow-md flex items-center justify-center p-2" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                      <img
+                        src={`/imgsistema/${flows[simFlow][simStep].image}`}
+                        alt={flows[simFlow][simStep].title}
+                        className="rounded-lg object-contain w-full h-auto max-h-[240px] bg-black"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          const parent = e.target.parentElement;
+                          if (!parent.querySelector('.image-error-fallback')) {
+                            const fallback = document.createElement('div');
+                            fallback.className = 'image-error-fallback flex flex-col items-center justify-center p-6 text-center text-muted w-full h-[180px]';
+                            fallback.style.color = 'var(--text-muted)';
+                            fallback.innerHTML = `
+                              <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-10 h-10 text-primary mb-2" style="color:var(--primary);"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                              <p class="text-xs font-semibold text-white">Interfaz: ${flows[simFlow][simStep].image.split('/').pop()}</p>
+                              <p class="text-[10px] mt-0.5 text-muted" style="color:var(--text-muted)">Ruta: /imgsistema/${flows[simFlow][simStep].image}</p>
+                            `;
+                            parent.appendChild(fallback);
+                          }
+                        }}
+                      />
                     </div>
                   </div>
                 </div>
