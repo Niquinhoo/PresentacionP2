@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Informe Técnico — Sistema de Gestión de Restaurante</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #21263a;
+    --border: #2e3451;
+    --accent: #f97316;
+    --accent2: #fb923c;
+    --blue: #60a5fa;
+    --green: #34d399;
+    --purple: #a78bfa;
+    --red: #f87171;
+    --text: #e2e8f0;
+    --text-muted: #94a3b8;
+    --text-dim: #64748b;
+    --font: 'Inter', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    line-height: 1.7;
+    font-size: 15px;
+  }
+
+  /* SIDEBAR NAV */
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    width: 260px; height: 100vh;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 32px 0;
+    overflow-y: auto;
+    z-index: 100;
+  }
+  .sidebar-logo {
+    padding: 0 24px 28px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .sidebar-logo .tag {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .sidebar-logo h2 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.4;
+  }
+  .nav-section {
+    padding: 0 16px;
+    margin-bottom: 20px;
+  }
+  .nav-section-title {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    padding: 0 8px;
+    margin-bottom: 8px;
+  }
+  .nav-item {
+    display: block;
+    padding: 8px 12px;
+    border-radius: 8px;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 400;
+    transition: all 0.15s;
+    margin-bottom: 2px;
+  }
+  .nav-item:hover { background: var(--surface2); color: var(--text); }
+  .nav-item.active { background: rgba(249,115,22,0.12); color: var(--accent); font-weight: 500; }
+  .nav-dot {
+    display: inline-block; width: 6px; height: 6px;
+    border-radius: 50%; margin-right: 10px; vertical-align: middle;
+  }
+
+  /* MAIN CONTENT */
+  .main {
+    margin-left: 260px;
+    padding: 0 60px 80px;
+    max-width: calc(900px + 120px);
+  }
+
+  /* HERO */
+  .hero {
+    padding: 72px 0 56px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 56px;
+  }
+  .hero .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(249,115,22,0.1);
+    border: 1px solid rgba(249,115,22,0.3);
+    color: var(--accent);
+    padding: 5px 14px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    margin-bottom: 24px;
+  }
+  .hero h1 {
+    font-size: 42px;
+    font-weight: 700;
+    line-height: 1.15;
+    margin-bottom: 16px;
+    letter-spacing: -0.5px;
+  }
+  .hero h1 span { color: var(--accent); }
+  .hero p {
+    font-size: 17px;
+    color: var(--text-muted);
+    max-width: 580px;
+    line-height: 1.75;
+  }
+  .hero-meta {
+    display: flex; gap: 32px;
+    margin-top: 32px;
+  }
+  .meta-item .label {
+    font-size: 11px; font-weight: 600; letter-spacing: 1px;
+    color: var(--text-dim); text-transform: uppercase; margin-bottom: 4px;
+  }
+  .meta-item .value { font-size: 14px; color: var(--text); font-weight: 500; }
+
+  /* SECTIONS */
+  section {
+    margin-bottom: 64px;
+    scroll-margin-top: 24px;
+  }
+  .section-header {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 32px;
+  }
+  .section-num {
+    font-family: var(--mono);
+    font-size: 11px; color: var(--accent);
+    font-weight: 500; letter-spacing: 1px;
+  }
+  .section-line {
+    flex: 1; height: 1px;
+    background: linear-gradient(to right, var(--border), transparent);
+  }
+  h2 {
+    font-size: 24px; font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+  h3 {
+    font-size: 17px; font-weight: 600;
+    margin-bottom: 12px; margin-top: 28px;
+    color: var(--text);
+  }
+  p { color: var(--text-muted); margin-bottom: 16px; }
+
+  /* CARDS */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 13px; font-weight: 600; margin-bottom: 8px;
+    color: var(--text);
+  }
+  .card p { margin-bottom: 0; }
+
+  /* LAYER CARDS */
+  .layers {
+    display: flex; flex-direction: column; gap: 0;
+  }
+  .layer {
+    display: flex; align-items: flex-start; gap: 0;
+    position: relative;
+  }
+  .layer-connector {
+    display: flex; flex-direction: column; align-items: center;
+    width: 48px; flex-shrink: 0;
+    margin-top: 28px;
+  }
+  .layer-dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    border: 2px solid;
+    flex-shrink: 0;
+    background: var(--bg);
+    z-index: 1;
+  }
+  .layer-line {
+    width: 2px; flex: 1; min-height: 32px;
+    background: var(--border);
+  }
+  .layer-last .layer-line { display: none; }
+  .layer-body {
+    flex: 1; padding: 20px 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 16px;
+    margin-left: 8px;
+  }
+  .layer-body h4 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .layer-body p { font-size: 13px; margin-bottom: 8px; }
+  .layer-tag {
+    display: inline-block;
+    font-family: var(--mono); font-size: 11px;
+    padding: 2px 8px; border-radius: 4px;
+    margin-right: 4px; margin-bottom: 4px;
+    font-weight: 500;
+  }
+
+  /* GRID */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+
+  /* STAT CARDS */
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat::before {
+    content: '';
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 3px;
+  }
+  .stat.orange::before { background: var(--accent); }
+  .stat.blue::before { background: var(--blue); }
+  .stat.green::before { background: var(--green); }
+  .stat.purple::before { background: var(--purple); }
+  .stat-num {
+    font-size: 32px; font-weight: 700;
+    font-family: var(--mono);
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .stat.orange .stat-num { color: var(--accent); }
+  .stat.blue .stat-num { color: var(--blue); }
+  .stat.green .stat-num { color: var(--green); }
+  .stat.purple .stat-num { color: var(--purple); }
+  .stat-label { font-size: 13px; color: var(--text-muted); }
+
+  /* CODE */
+  .code-block {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 16px 0;
+    overflow-x: auto;
+  }
+  .code-block pre {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: #c9d1d9;
+    line-height: 1.65;
+  }
+  .code-block .kw { color: #ff7b72; }
+  .code-block .cl { color: #79c0ff; }
+  .code-block .str { color: #a5d6ff; }
+  .code-block .cm { color: #8b949e; }
+  .code-block .fn { color: #d2a8ff; }
+  .code-block .nm { color: #ffa657; }
+
+  /* TABLE */
+  .table-wrap { overflow-x: auto; margin: 16px 0; }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    background: var(--surface2);
+    padding: 10px 16px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(46,52,81,0.5);
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  tr:last-child td { border-bottom: none; }
+  td:first-child { font-family: var(--mono); color: var(--blue); font-size: 12px; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+
+  /* PILLS */
+  .pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .pill-orange { background: rgba(249,115,22,0.15); color: var(--accent); }
+  .pill-blue { background: rgba(96,165,250,0.15); color: var(--blue); }
+  .pill-green { background: rgba(52,211,153,0.15); color: var(--green); }
+  .pill-purple { background: rgba(167,139,250,0.15); color: var(--purple); }
+  .pill-red { background: rgba(248,113,113,0.15); color: var(--red); }
+
+  /* TIMELINE */
+  .timeline { position: relative; }
+  .tl-item {
+    display: flex; gap: 20px;
+    margin-bottom: 0;
+  }
+  .tl-left {
+    width: 120px; flex-shrink: 0;
+    padding-top: 20px;
+    text-align: right;
+  }
+  .tl-date {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--accent); font-weight: 500;
+  }
+  .tl-author {
+    font-size: 11px; color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .tl-connector {
+    display: flex; flex-direction: column; align-items: center;
+    width: 24px; flex-shrink: 0;
+  }
+  .tl-circle {
+    width: 10px; height: 10px; border-radius: 50%;
+    border: 2px solid var(--accent);
+    background: var(--bg); flex-shrink: 0;
+    margin-top: 24px; z-index: 1;
+  }
+  .tl-vline {
+    width: 2px; flex: 1; background: var(--border);
+    min-height: 20px;
+  }
+  .tl-item:last-child .tl-vline { display: none; }
+  .tl-body {
+    flex: 1; padding: 16px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 16px;
+  }
+  .tl-body h4 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .tl-body p { font-size: 13px; margin-bottom: 0; }
+
+  /* CONTRIBUTORS */
+  .contributors { display: flex; gap: 12px; flex-wrap: wrap; }
+  .contributor {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+  }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700; color: white;
+  }
+  .contributor-info .name { font-size: 13px; font-weight: 600; }
+  .contributor-info .role { font-size: 11px; color: var(--text-dim); }
+
+  /* FOOTER */
+  .footer {
+    margin-top: 80px; padding-top: 32px;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim); font-size: 12px;
+    text-align: center;
+  }
+
+  /* ALERT */
+  .alert {
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    border-left: 3px solid;
+    font-size: 13px;
+  }
+  .alert-orange { background: rgba(249,115,22,0.08); border-color: var(--accent); color: #fed7aa; }
+  .alert-blue { background: rgba(96,165,250,0.08); border-color: var(--blue); color: #bfdbfe; }
+  .alert-green { background: rgba(52,211,153,0.08); border-color: var(--green); color: #a7f3d0; }
+
+  .divider { height: 1px; background: var(--border); margin: 40px 0; }
+
+  @media (max-width: 900px) {
+    .sidebar { display: none; }
+    .main { margin-left: 0; padding: 24px; }
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 28px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <div class="tag">Prog. II — Final</div>
+    <h2>Sistema de Gestión<br>de Restaurante</h2>
+  </div>
+  <div class="nav-section">
+    <div class="nav-section-title">Informe Técnico</div>
+    <a href="#overview" class="nav-item active"><span class="nav-dot" style="background:var(--accent)"></span>Visión General</a>
+    <a href="#arquitectura" class="nav-item"><span class="nav-dot" style="background:var(--blue)"></span>Arquitectura</a>
+    <a href="#backend" class="nav-item"><span class="nav-dot" style="background:var(--green)"></span>Módulo Backend</a>
+    <a href="#bd" class="nav-item"><span class="nav-dot" style="background:var(--purple)"></span>Base de Datos</a>
+    <a href="#frontend" class="nav-item"><span class="nav-dot" style="background:var(--accent)"></span>Módulo GUI</a>
+    <a href="#optimizacion" class="nav-item"><span class="nav-dot" style="background:var(--blue)"></span>Optimizaciones</a>
+    <a href="#tests" class="nav-item"><span class="nav-dot" style="background:var(--green)"></span>Testing</a>
+    <a href="#equipo" class="nav-item"><span class="nav-dot" style="background:var(--purple)"></span>Equipo</a>
+    <a href="#conclusion" class="nav-item"><span class="nav-dot" style="background:var(--accent)"></span>Conclusión</a>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<main class="main">
+
+  <!-- HERO -->
+  <div class="hero" id="overview">
+    <div class="badge">📋 Informe Técnico Final</div>
+    <h1>Sistema de Gestión de<br><span>Restaurante</span></h1>
+    <p>Proyecto final de Programación II. Aplicación de escritorio Java con arquitectura multicapa, conexión a base de datos MySQL/TiDB Cloud y interfaz gráfica Swing.</p>
+    <div class="hero-meta">
+      <div class="meta-item">
+        <div class="label">Materia</div>
+        <div class="value">Programación II</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">Tecnología</div>
+        <div class="value">Java 17 + MySQL</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">Patrón</div>
+        <div class="value">MVC + DAO + Service</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">Build</div>
+        <div class="value">Maven + Ant</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- METRICAS -->
+  <div class="grid-3" style="margin-bottom:64px">
+    <div class="stat orange">
+      <div class="stat-num">37</div>
+      <div class="stat-label">Clases Java — Backend</div>
+    </div>
+    <div class="stat blue">
+      <div class="stat-num">15</div>
+      <div class="stat-label">Vistas Swing — GUI</div>
+    </div>
+    <div class="stat green">
+      <div class="stat-num">6+</div>
+      <div class="stat-label">Ramas Git utilizadas</div>
+    </div>
+    <div class="stat purple">
+      <div class="stat-num">4</div>
+      <div class="stat-label">Colaboradores activos</div>
+    </div>
+    <div class="stat orange">
+      <div class="stat-num">5</div>
+      <div class="stat-label">Entidades del dominio</div>
+    </div>
+    <div class="stat blue">
+      <div class="stat-num">3</div>
+      <div class="stat-label">Capas arquitectónicas</div>
+    </div>
+  </div>
+
+  <!-- ARQUITECTURA -->
+  <section id="arquitectura">
+    <div class="section-header">
+      <span class="section-num">01</span>
+      <h2>Arquitectura del Sistema</h2>
+      <div class="section-line"></div>
+    </div>
+    <p>El sistema sigue una arquitectura <strong>multicapa</strong> estrictamente separada. Cada capa tiene una única responsabilidad y se comunica con la capa adyacente mediante interfaces bien definidas, favoreciendo la mantenibilidad y los tests unitarios.</p>
+
+    <div class="layers">
+      <div class="layer">
+        <div class="layer-connector">
+          <div class="layer-dot" style="border-color:var(--accent)"></div>
+          <div class="layer-line"></div>
+        </div>
+        <div class="layer-body">
+          <h4 style="color:var(--accent)">🖼️ Capa Vista (GUI)</h4>
+          <p>Formularios Java Swing construidos con NetBeans Form Builder. Responsable de la interacción con el usuario. Utiliza <code>SwingWorker</code> para operaciones asíncronas y nunca bloquea el EDT.</p>
+          <span class="layer-tag" style="background:rgba(249,115,22,0.12); color:var(--accent)">Login.java</span>
+          <span class="layer-tag" style="background:rgba(249,115,22,0.12); color:var(--accent)">Menu.java</span>
+          <span class="layer-tag" style="background:rgba(249,115,22,0.12); color:var(--accent)">MesasPanel</span>
+          <span class="layer-tag" style="background:rgba(249,115,22,0.12); color:var(--accent)">ReportesPanel</span>
+          <span class="layer-tag" style="background:rgba(249,115,22,0.12); color:var(--accent)">CheckoutDialog</span>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-connector">
+          <div class="layer-dot" style="border-color:var(--blue)"></div>
+          <div class="layer-line"></div>
+        </div>
+        <div class="layer-body">
+          <h4 style="color:var(--blue)">⚙️ Capa de Servicio / Controlador</h4>
+          <p>Contiene la lógica de negocio. Los <strong>Controllers</strong> actúan como puente entre GUI y Services. Los <strong>Services</strong> orquestan las operaciones del dominio: validaciones, transacciones, reglas de negocio. <code>ServicioFactory</code> implementa Singleton con <em>double-checked locking</em>.</p>
+          <span class="layer-tag" style="background:rgba(96,165,250,0.12); color:var(--blue)">MesaService</span>
+          <span class="layer-tag" style="background:rgba(96,165,250,0.12); color:var(--blue)">PedidoService</span>
+          <span class="layer-tag" style="background:rgba(96,165,250,0.12); color:var(--blue)">ProductoService</span>
+          <span class="layer-tag" style="background:rgba(96,165,250,0.12); color:var(--blue)">ReporteService</span>
+          <span class="layer-tag" style="background:rgba(96,165,250,0.12); color:var(--blue)">ServicioFactory</span>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-connector">
+          <div class="layer-dot" style="border-color:var(--green)"></div>
+          <div class="layer-line"></div>
+        </div>
+        <div class="layer-body">
+          <h4 style="color:var(--green)">🗄️ Capa DAO (Data Access Object)</h4>
+          <p>Abstrae el acceso a datos. Cada entidad tiene una <strong>interfaz</strong> (contrato) y una <strong>implementación</strong> concreta con JDBC/SQL. Permite swappear la fuente de datos sin tocar la capa de servicio. Las operaciones críticas (como insertar pedido + detalles) son <strong>transaccionales</strong>.</p>
+          <span class="layer-tag" style="background:rgba(52,211,153,0.12); color:var(--green)">MesaDAO</span>
+          <span class="layer-tag" style="background:rgba(52,211,153,0.12); color:var(--green)">PedidoDAO</span>
+          <span class="layer-tag" style="background:rgba(52,211,153,0.12); color:var(--green)">ProductoDAO</span>
+          <span class="layer-tag" style="background:rgba(52,211,153,0.12); color:var(--green)">UsuarioDAO</span>
+          <span class="layer-tag" style="background:rgba(52,211,153,0.12); color:var(--green)">CategoriaDAO</span>
+          <span class="layer-tag" style="background:rgba(52,211,153,0.12); color:var(--green)">ReporteDAO</span>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-connector">
+          <div class="layer-dot" style="border-color:var(--purple)"></div>
+          <div class="layer-line"></div>
+        </div>
+        <div class="layer-body">
+          <h4 style="color:var(--purple)">📦 Capa Modelo</h4>
+          <p>POJOs que representan las entidades del dominio. No tienen lógica de negocio. Utilizan <strong>enumeraciones</strong> para los estados (<code>EstadoMesa</code>, <code>EstadoPedido</code>, <code>Rol</code>), garantizando type-safety en todo el sistema.</p>
+          <span class="layer-tag" style="background:rgba(167,139,250,0.12); color:var(--purple)">Mesa</span>
+          <span class="layer-tag" style="background:rgba(167,139,250,0.12); color:var(--purple)">Pedido</span>
+          <span class="layer-tag" style="background:rgba(167,139,250,0.12); color:var(--purple)">Producto</span>
+          <span class="layer-tag" style="background:rgba(167,139,250,0.12); color:var(--purple)">Usuario</span>
+          <span class="layer-tag" style="background:rgba(167,139,250,0.12); color:var(--purple)">Categoria</span>
+          <span class="layer-tag" style="background:rgba(167,139,250,0.12); color:var(--purple)">DetallePedido</span>
+        </div>
+      </div>
+      <div class="layer layer-last">
+        <div class="layer-connector">
+          <div class="layer-dot" style="border-color:var(--red)"></div>
+          <div class="layer-line"></div>
+        </div>
+        <div class="layer-body">
+          <h4 style="color:var(--red)">🔌 Capa de Persistencia</h4>
+          <p>Base de datos MySQL alojada en <strong>TiDB Cloud</strong>. La conexión se gestiona a través de <code>ConexionDB</code> (Singleton) con pool HikariCP. Configuración externalizada en <code>db.properties</code>.</p>
+          <span class="layer-tag" style="background:rgba(248,113,113,0.12); color:var(--red)">ConexionDB</span>
+          <span class="layer-tag" style="background:rgba(248,113,113,0.12); color:var(--red)">HikariCP</span>
+          <span class="layer-tag" style="background:rgba(248,113,113,0.12); color:var(--red)">MySQL/TiDB</span>
+          <span class="layer-tag" style="background:rgba(248,113,113,0.12); color:var(--red)">db.properties</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BACKEND -->
+  <section id="backend">
+    <div class="section-header">
+      <span class="section-num">02</span>
+      <h2>Módulo Backend</h2>
+      <div class="section-line"></div>
+    </div>
+    <p>El módulo <code>Backend/</code> es un proyecto <strong>Maven</strong> independiente compilado con <code>mvn clean install</code>. Genera un artefacto JAR que la GUI referencia en su classpath.</p>
+
+    <h3>Modelo de Dominio</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Entidad</th>
+            <th>Descripción</th>
+            <th>Relaciones</th>
+            <th>Estados</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Mesa</td>
+            <td>Unidad física del restaurante (16 mesas)</td>
+            <td>1:N Pedidos</td>
+            <td><span class="pill pill-green">LIBRE</span> <span class="pill pill-orange">OCUPADA</span> <span class="pill pill-blue">RESERVADA</span></td>
+          </tr>
+          <tr>
+            <td>Pedido</td>
+            <td>Orden de consumo de una mesa</td>
+            <td>N:1 Mesa, 1:N DetallePedido</td>
+            <td><span class="pill pill-blue">PENDIENTE</span> <span class="pill pill-orange">EN_PROCESO</span> <span class="pill pill-green">ENTREGADO</span></td>
+          </tr>
+          <tr>
+            <td>DetallePedido</td>
+            <td>Ítem individual de un pedido</td>
+            <td>N:1 Pedido, N:1 Producto</td>
+            <td>— (cantidad + precio unitario)</td>
+          </tr>
+          <tr>
+            <td>Producto</td>
+            <td>Ítem del menú con stock y precio</td>
+            <td>N:1 Categoria</td>
+            <td>— (activo/inactivo por stock)</td>
+          </tr>
+          <tr>
+            <td>Usuario</td>
+            <td>Empleado del sistema</td>
+            <td>—</td>
+            <td><span class="pill pill-purple">ADMIN</span> <span class="pill pill-blue">MOZO</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Capa DAO — Contratos</h3>
+    <p>Cada entidad expone una interfaz DAO con operaciones CRUD estándar. Las implementaciones usan <strong>JDBC puro</strong> con <code>PreparedStatement</code> para prevenir inyección SQL.</p>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title" style="color:var(--green)">MesaDAO</div>
+        <p>CRUD completo + búsqueda por estado. Permite filtrar mesas LIBRES para asignación rápida. Método clave: <code>buscarPorEstado(EstadoMesa)</code>.</p>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--green)">PedidoDAO</div>
+        <p>Operaciones transaccionales para INSERT simultáneo de <code>pedido</code> + <code>detalle_pedido</code>. Soporta rollback ante falla. Carga de observaciones y actualización de stock.</p>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--green)">ProductoDAO</div>
+        <p>Listado de productos activos con soporte de filtrado por categoría. Actualización de stock al confirmar pedidos.</p>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--green)">ReporteDAO</div>
+        <p>Consultas analíticas: ventas por mes (<code>VentaPorMesDTO</code>), ranking de productos (<code>VentaPorProductoDTO</code>) y resumen general (<code>ResumenGeneralDTO</code>).</p>
+      </div>
+    </div>
+
+    <h3>Capa de Servicio</h3>
+    <div class="alert alert-blue">
+      <strong>Patrón Factory:</strong> <code>ServicioFactory</code> centraliza la creación y el acceso a todas las instancias de servicio. Implementa <em>double-checked locking</em> con variables <code>volatile</code> para garantizar thread-safety cuando la GUI accede desde múltiples <code>SwingWorker</code> simultáneos.
+    </div>
+
+    <div class="code-block"><pre><span class="cm">// ServicioFactory — Singleton Thread-Safe</span>
+<span class="kw">private static volatile</span> <span class="cl">ProductoService</span> productoService;
+
+<span class="kw">public static</span> <span class="cl">ProductoService</span> <span class="fn">getProductoService</span>() {
+    <span class="cl">ProductoService</span> result = productoService;
+    <span class="kw">if</span> (result == <span class="kw">null</span>) {
+        <span class="kw">synchronized</span> (LOCK) {
+            result = productoService;
+            <span class="kw">if</span> (result == <span class="kw">null</span>) {
+                productoService = result = <span class="kw">new</span> <span class="cl">ProductoService</span>();
+            }
+        }
+    }
+    <span class="kw">return</span> result;
+}</pre></div>
+  </section>
+
+  <!-- BASE DE DATOS -->
+  <section id="bd">
+    <div class="section-header">
+      <span class="section-num">03</span>
+      <h2>Base de Datos</h2>
+      <div class="section-line"></div>
+    </div>
+    <p>El esquema está definido en <code>schema.sql</code> y los datos de prueba en <code>seed.sql</code>. La BD se aloja en <strong>TiDB Cloud</strong> (compatible con MySQL), accesible via TCP con TLS.</p>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Tablas Principales</div>
+        <p style="margin-bottom:8px">El esquema DDL fue refactorizado en el merge de la capa DAO. Se incorporaron <strong>índices</strong> sobre columnas de filtrado frecuente y <strong>vistas estadísticas</strong> para los reportes.</p>
+        <span class="pill pill-blue">mesas</span>
+        <span class="pill pill-blue">pedidos</span>
+        <span class="pill pill-blue">detalle_pedido</span>
+        <span class="pill pill-blue">productos</span>
+        <span class="pill pill-blue">categorias</span>
+        <span class="pill pill-blue">usuarios</span>
+      </div>
+      <div class="card">
+        <div class="card-title">Conexión — HikariCP Pool</div>
+        <p>La clase <code>ConexionDB</code> fue migrada de <code>DriverManager</code> a un pool HikariCP que reduce la latencia de cada request de ~500ms a &lt;5ms al reutilizar conexiones pre-establecidas.</p>
+        <div style="margin-top:10px">
+          <span class="pill pill-green">Max Pool: 10</span>
+          <span class="pill pill-green">Min Idle: 2</span>
+          <span class="pill pill-orange">Cache PrepStmts: 250</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="code-block"><pre><span class="cm">-- Configuración de conexión (db.properties)</span>
+<span class="nm">db.url</span>=jdbc:mysql://&lt;host&gt;:4000/restaurant?useSSL=true
+<span class="nm">db.username</span>=root
+<span class="nm">db.password</span>=****
+<span class="nm">hikari.maximumPoolSize</span>=10
+<span class="nm">hikari.minimumIdle</span>=2
+<span class="nm">hikari.cachePrepStmts</span>=true
+<span class="nm">hikari.prepStmtCacheSize</span>=250</pre></div>
+
+    <div class="alert alert-orange">
+      <strong>Diseño clave:</strong> La clase <code>ConexionDB</code> implementa un <strong>Singleton con fallback</strong>: si <code>db.properties</code> no está disponible (ej. entorno de testing), la conexión cae a valores hardcodeados de desarrollo local, sin romper los tests unitarios.
+    </div>
+  </section>
+
+  <!-- FRONTEND -->
+  <section id="frontend">
+    <div class="section-header">
+      <span class="section-num">04</span>
+      <h2>Módulo GUI (Frontend)</h2>
+      <div class="section-line"></div>
+    </div>
+    <p>El módulo <code>GUI/</code> es un proyecto <strong>Apache Ant</strong> de NetBeans (no Maven), para compatibilidad total con el Form Builder de IDE. Las vistas se distribuyen en paneles intercambiables dentro de la ventana principal.</p>
+
+    <h3>Pantallas Implementadas</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Componente</th><th>Función</th><th>Dependencias</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Login.java</td>
+            <td>Autenticación de usuarios (mozo/admin) vía UsuarioService</td>
+            <td>SwingWorker, ServicioFactory</td>
+          </tr>
+          <tr>
+            <td>Registro.java</td>
+            <td>Alta de nuevos empleados con rol asignable</td>
+            <td>UsuarioService</td>
+          </tr>
+          <tr>
+            <td>Menu.java</td>
+            <td>Ventana principal — contenedor de paneles con barra de navegación lateral</td>
+            <td>Todos los paneles</td>
+          </tr>
+          <tr>
+            <td>MesasPanel.java</td>
+            <td>Grid visual de 16 mesas con indicador de estado por color</td>
+            <td>MesaService, SwingWorker</td>
+          </tr>
+          <tr>
+            <td>DetallesMesasPanel.java</td>
+            <td>Vista detallada de mesa seleccionada: pedidos activos, acciones</td>
+            <td>MesaService, PedidoService</td>
+          </tr>
+          <tr>
+            <td>PedidosPanel.java</td>
+            <td>Listado general de comandas activas con estados en tiempo real</td>
+            <td>PedidoService, SwingWorker</td>
+          </tr>
+          <tr>
+            <td>ProductosPanel.java</td>
+            <td>ABM del catálogo de productos con CardProducto como componente reutilizable</td>
+            <td>ProductoService, CategoriaService</td>
+          </tr>
+          <tr>
+            <td>InsumosPanel.java</td>
+            <td>Gestión de insumos y control de stock</td>
+            <td>ProductoService</td>
+          </tr>
+          <tr>
+            <td>CheckoutDialog.java</td>
+            <td>Modal de facturación: resumen de consumo, total, confirmación de cobro</td>
+            <td>PedidoService, MesaService</td>
+          </tr>
+          <tr>
+            <td>ReservaDialog.java</td>
+            <td>Diálogo de reservas con selector de fecha/hora (LGoodDatePicker)</td>
+            <td>LGoodDatePicker.jar, MesaService</td>
+          </tr>
+          <tr>
+            <td>GeneralPanel.java</td>
+            <td>KPIs de ventas: gráfico circular por categoría, métricas clave (JFreeChart)</td>
+            <td>ReporteService, JFreeChart</td>
+          </tr>
+          <tr>
+            <td>VentasPanel.java</td>
+            <td>Gráfico de línea histórico de ingresos mensuales</td>
+            <td>ReporteService, JFreeChart</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Librerías Externas</h3>
+    <div class="grid-3">
+      <div class="card">
+        <div class="card-title" style="color:var(--blue)">AbsoluteLayout.jar</div>
+        <p>Gestor de layout de NetBeans GUI Builder. Permite posicionamiento absoluto en los formularios .form.</p>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--green)">jfreechart-1.5.4.jar</div>
+        <p>Librería para generación de gráficos estadísticos: torta (categorías) y línea (ingresos mensuales).</p>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--purple)">LGoodDatePicker.jar</div>
+        <p>Selector visual de fecha y hora para el diálogo de reservas de mesas.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- OPTIMIZACIONES -->
+  <section id="optimizacion">
+    <div class="section-header">
+      <span class="section-num">05</span>
+      <h2>Optimizaciones Implementadas</h2>
+      <div class="section-line"></div>
+    </div>
+    <p>Tras la integración inicial, se detectaron congelamientos severos de la UI. Se realizó una refactorización profunda que resolvió todos los problemas de rendimiento.</p>
+
+    <div class="grid-2">
+      <div class="card" style="border-color:rgba(249,115,22,0.3)">
+        <div class="card-title" style="color:var(--accent)">❌ Problema Original</div>
+        <p>Todas las consultas a la BD se ejecutaban en el <strong>EDT (Event Dispatch Thread)</strong>, el único hilo de Swing. Como TiDB Cloud tiene latencia de red + TLS, cada <code>getConnection()</code> tardaba 500ms–5s, congelando completamente la pantalla.</p>
+      </div>
+      <div class="card" style="border-color:rgba(52,211,153,0.3)">
+        <div class="card-title" style="color:var(--green)">✅ Solución Aplicada</div>
+        <p>Clase utilitaria <code>AsyncDataLoader</code> basada en <code>SwingWorker</code>. Todas las operaciones de BD se delegan a un hilo background. El EDT solo recibe el resultado final para actualizar la UI, nunca espera activamente.</p>
+      </div>
+    </div>
+
+    <div class="code-block"><pre><span class="cm">// AsyncDataLoader — Operación asíncrona genérica</span>
+<span class="cl">AsyncDataLoader</span>.<span class="fn">load</span>(
+    parentComponent,                     <span class="cm">// Componente padre (se deshabilita durante la carga)</span>
+    () -> <span class="cl">ServicioFactory</span>.<span class="fn">getProductoService</span>().<span class="fn">listar</span>(),  <span class="cm">// En hilo background</span>
+    productos -> <span class="fn">actualizarTabla</span>(productos),         <span class="cm">// En EDT al finalizar</span>
+    error -> <span class="fn">mostrarError</span>(error.<span class="fn">getMessage</span>())           <span class="cm">// En EDT si falla</span>
+);</pre></div>
+
+    <div class="alert alert-green">
+      <strong>Resultado:</strong> El login pasa de ~5 segundos a respuesta inmediata con cursor de espera. El cambio entre secciones es fluido. La UI nunca se "congela" independientemente de la latencia de red.
+    </div>
+  </section>
+
+  <!-- TESTING -->
+  <section id="tests">
+    <div class="section-header">
+      <span class="section-num">06</span>
+      <h2>Testing</h2>
+      <div class="section-line"></div>
+    </div>
+    <p>Los tests unitarios se ubican en <code>Backend/src/test/</code> y se ejecutan automáticamente durante <code>mvn clean install</code>.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Clase de Test</th><th>Cobertura</th><th>Tecnología</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ConexionDBTest.java</td>
+            <td>Verifica que el pool HikariCP se inicializa y devuelve conexiones válidas. Aserciones alineadas con comportamiento real (post-migración).</td>
+            <td>JUnit + HikariCP</td>
+          </tr>
+          <tr>
+            <td>MesaDAOImplTest.java</td>
+            <td>CRUD de mesas, búsqueda por estado, actualización de estado.</td>
+            <td>JUnit + JDBC</td>
+          </tr>
+          <tr>
+            <td>PedidoDAOImplTest.java</td>
+            <td>Inserción transaccional pedido+detalles, rollback en caso de error.</td>
+            <td>JUnit + JDBC</td>
+          </tr>
+          <tr>
+            <td>ProductoDAOImplTest.java</td>
+            <td>Listado de productos, filtrado por categoría, actualización de stock.</td>
+            <td>JUnit + JDBC</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="alert alert-blue">
+      Existe también un <strong>test de flujo completo</strong> agregado en el commit final (<code>fix: actualizar MesaService y agregar test de flujo completo</code>) que simula el ciclo real: mesa libre → asignación → pedido → checkout → mesa libre nuevamente.
+    </div>
+  </section>
+
+  <!-- EQUIPO -->
+  <section id="equipo">
+    <div class="section-header">
+      <span class="section-num">07</span>
+      <h2>Equipo de Desarrollo</h2>
+      <div class="section-line"></div>
+    </div>
+
+    <div class="contributors">
+      <div class="contributor">
+        <div class="avatar" style="background:linear-gradient(135deg,#f97316,#ea580c)">A</div>
+        <div class="contributor-info">
+          <div class="name">Aggs13</div>
+          <div class="role">Backend — DAO, Modelo, Tests</div>
+        </div>
+      </div>
+      <div class="contributor">
+        <div class="avatar" style="background:linear-gradient(135deg,#60a5fa,#3b82f6)">N</div>
+        <div class="contributor-info">
+          <div class="name">Niquinhoo</div>
+          <div class="role">Integración, Async, Conexión</div>
+        </div>
+      </div>
+      <div class="contributor">
+        <div class="avatar" style="background:linear-gradient(135deg,#34d399,#059669)">E</div>
+        <div class="contributor-info">
+          <div class="name">EnzoLlanos</div>
+          <div class="role">GUI — Vistas Swing, Checkout</div>
+        </div>
+      </div>
+      <div class="contributor">
+        <div class="avatar" style="background:linear-gradient(135deg,#a78bfa,#7c3aed)">G</div>
+        <div class="contributor-info">
+          <div class="name">GonzaloBarroso777</div>
+          <div class="role">Backend — ProductoDAO</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONCLUSION -->
+  <section id="conclusion">
+    <div class="section-header">
+      <span class="section-num">08</span>
+      <h2>Conclusión</h2>
+      <div class="section-line"></div>
+    </div>
+    <p>El proyecto logra una implementación completa y funcional de un sistema de gestión para restaurante, respetando los principios de arquitectura multicapa enseñados en la cursada. Los puntos más destacados son:</p>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title" style="color:var(--accent)">Separación de Responsabilidades</div>
+        <p>Cada capa (Modelo → DAO → Service → Controller → Vista) está claramente delimitada, con interfaces como contratos entre capas.</p>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--blue)">Patrones de Diseño Aplicados</div>
+        <p>DAO, Factory (ServicioFactory), Singleton (ConexionDB), Observer (AsyncDataLoader), Strategy implícita en los DTOs de reportes.</p>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--green)">Calidad de Código</div>
+        <p>Tests unitarios automatizados con JUnit, uso de transacciones JDBC, manejo de excepciones, código libre de hardcodeo vía <code>db.properties</code>.</p>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--purple)">Proceso de Desarrollo</div>
+        <p>Git con ramificación estratégica (<code>layer/dao</code>, <code>layer/service</code>, <code>layer/view</code>, <code>develop</code>, <code>master</code>), integración continua por feature branches.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="footer">
+    Programación II — Proyecto Final · Sistema de Gestión de Restaurante · Java 17 + MySQL · 2026
+  </div>
+
+</main>
+
+<script>
+  // Active nav highlight on scroll
+  const sections = document.querySelectorAll('section, .hero');
+  const navItems = document.querySelectorAll('.nav-item');
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        navItems.forEach(n => n.classList.remove('active'));
+        const id = e.target.id;
+        const link = document.querySelector(`.nav-item[href="#${id}"]`);
+        if (link) link.classList.add('active');
+      }
+    });
+  }, { threshold: 0.3 });
+  sections.forEach(s => s.id && observer.observe(s));
+</script>
+</body>
+</html>
