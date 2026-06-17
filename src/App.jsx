@@ -1046,28 +1046,79 @@ function App() {
         actor: 'Interfaz Gráfica (EDT)',
         action: 'El mozo ingresa usuario/contraseña en Login.java y hace clic en "Entrar". El botón cambia a "Ingresando..." y se deshabilita.',
         query: 'N/A (Cálculo de validaciones locales en la vista)',
-        icon: Monitor
+        icon: Monitor,
+        image: 'Login-Register/Login.png',
+        snippet: `// vistas/Login.java
+private void EntrarActionPerformed(java.awt.event.ActionEvent evt) {
+    String nombreUsuario = Usuarioimput.getText().trim();
+    String contrasena = String.valueOf(Password.getPassword());
+
+    if (nombreUsuario.isEmpty() || contrasena.isEmpty()) {
+        javax.swing.JOptionPane.showMessageDialog(this, "Por favor ingresá...");
+        return;
+    }
+    Entrar.setEnabled(false);
+    Entrar.setText("Ingresando...");
+    // ...
+}`
       },
       {
         title: 'Despacho Asíncrono',
         actor: 'AsyncDataLoader (SwingWorker)',
         action: 'Se instancia un hilo secundario que invoca a ServicioFactory.getUsuarioService().iniciarSesion(usuario, password). El EDT permanece liberado (la UI no se congela).',
         query: 'N/A (Transición a la capa de servicios)',
-        icon: Activity
+        icon: Activity,
+        image: 'Login-Register/Login.png',
+        snippet: `// vistas/util/AsyncDataLoader.java
+public static <T> void load(Component parent, Callable<T> task, 
+                            Consumer<T> onSuccess, Consumer<Throwable> onError) {
+    parent.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+    SwingWorker<T, Void> worker = new SwingWorker<>() {
+        @Override
+        protected T doInBackground() throws Exception {
+            return task.call(); // Ejecución en segundo plano (hilo background)
+        }
+        // ...
+    };
+    worker.execute();
+}`
       },
       {
         title: 'Autenticación con Hash SHA2-256',
         actor: 'UsuarioDAOImpl & Base de Datos',
         action: 'El DAO JDBC ejecuta una consulta preparada inyectando la contraseña y delegando el hashing en la base de datos MySQL de TiDB.',
         query: 'SELECT u.id_usuario, u.nombre, u.id_rol FROM usuarios u WHERE u.usuario = ? AND u.contrasena = SHA2(?, 256) AND u.activo = TRUE',
-        icon: Database
+        icon: Database,
+        image: 'Login-Register/Register.png',
+        snippet: `// com.restaurant.backend.dao.UsuarioDAOImpl
+String query = "SELECT id_usuario, nombre FROM usuarios WHERE usuario = ? AND contrasena = SHA2(?, 256)";
+try (Connection conn = ConexionDB.getInstance().getConnection();
+     PreparedStatement ps = conn.prepareStatement(query)) {
+    ps.setString(1, usuario);
+    ps.setString(2, password);
+    try (ResultSet rs = ps.executeQuery()) {
+        // ... retorna datos del usuario ...
+    }
+}`
       },
       {
         title: 'Carga del Tablero Principal',
         actor: 'Menú Principal (EDT)',
         action: 'La base de datos retorna el objeto Usuario. El SwingWorker finaliza y abre la ventana Menu.java en el hilo EDT, cargando el nombre y el rol en la cabecera.',
         query: 'N/A (Inicialización de paneles de mesas, pedidos y catálogo)',
-        icon: UserCheck
+        icon: UserCheck,
+        image: 'CargarPedido/MenuPrincipal-1.png',
+        snippet: `// vistas/Login.java
+AsyncDataLoader.load(this,
+    () -> ServicioFactory.getUsuarioService().iniciarSesion(usuario, password),
+    usuarioAutenticado -> {
+        // Callback ejecutado en el EDT principal al finalizar la carga
+        Menu menu = new Menu(usuarioAutenticado);
+        menu.setVisible(true);
+        this.dispose(); // Cierra login actual
+    },
+    error -> showMessageDialog(error)
+);`
       }
     ],
     pedido: [
@@ -1076,28 +1127,76 @@ function App() {
         actor: 'Panel de Menú (EDT)',
         action: 'El mozo selecciona categorías de comidas. Los productos se cargan dinámicamente y se agregan a la comanda actual calculando el total interactivamente.',
         query: 'N/A (Lógica en memoria de Swing)',
-        icon: Monitor
+        icon: Monitor,
+        image: 'CargarPedido/MenuFiltradoCategorias-2.png',
+        snippet: `// vistas/Menu.java
+// Carga catálogo de productos activos filtrados por categoría
+for (Producto prod : productos) {
+    CardProducto card = new CardProducto();
+    card.setProducto(prod.getNombre(), prod.getPrecio().doubleValue());
+    card.setOnAgregarListener((nombre, precio) -> agregarProductoTabla(nombre, precio));
+    panelProductos.add(card);
+}
+panelProductos.revalidate();`
       },
       {
         title: 'Checkout y Confirmación',
         actor: 'CheckoutDialog (JDialog)',
         action: 'Se abre el diálogo modal para seleccionar la mesa, digitar descuentos (ej: 10%) e ingresar método de pago y observaciones.',
         query: 'N/A (Captura y validación de campos)',
-        icon: UserCheck
+        icon: UserCheck,
+        image: 'CargarPedido/Checkout-4.png',
+        snippet: `// vistas/CheckoutDialog.java
+private void recalcularTotalConDescuento() {
+    double descuento = obtenerDescuento();
+    double total = subtotalOriginal;
+    if (descuento > 0) {
+        if (descuento <= 100) {
+            total = subtotalOriginal * (1 - (descuento / 100.0)); // %
+        } else {
+            total = Math.max(0.0, subtotalOriginal - descuento); // Fijo
+        }
+    }
+    TotalNum.setText(String.format(Locale.US, "$%.2f", total));
+}`
       },
       {
         title: 'Registro Transaccional & Descuento de Stock',
         actor: 'PedidoService (Backend)',
         action: 'El backend procesa el pedido en una transacción: inserta la cabecera en pedidos, los ítems en detalle_pedido y reduce el stock de la tabla de productos inmediatamente.',
         query: 'INSERT INTO pedidos (id_mesa, id_usuario, estado, total) ... ; UPDATE productos SET stock = stock - ? WHERE id_producto = ?',
-        icon: Database
+        icon: Database,
+        image: 'CargarPedido/Confirmacion-6.png',
+        snippet: `// com.restaurant.backend.dao.PedidoDAOImpl
+try {
+    conn = DatabaseConnection.getConnection();
+    conn.setAutoCommit(false); // Inicia transacción atómica
+    PreparedStatement ps = conn.prepareStatement(queryPedido, Statement.RETURN_GENERATED_KEYS);
+    // ... ejecuta cabecera ...
+    PreparedStatement psDetalles = conn.prepareStatement(queryDetalles);
+    // ... agrega batch de detalles ...
+    psDetalles.executeBatch();
+    conn.commit(); // Éxito: confirma cambios
+} catch (SQLException ex) {
+    conn.rollback(); // Falla: anula cambios
+}`
       },
       {
         title: 'Actualización en Vivo e Impresión de Comanda',
         actor: 'Tablero & JFileChooser (EDT)',
         action: 'La mesa pasa a color ROJO (Ocupada). Se abre el selector de archivos local para guardar el archivo comanda_mesa_X.txt con el formato del ticket.',
         query: 'N/A (Escritura del ticket en el sistema de archivos)',
-        icon: Package
+        icon: Package,
+        image: 'CargarPedido/ADondeSeGuardaLaComanda-5.png',
+        snippet: `// vistas/Menu.java
+// Impresión local en archivo comanda_mesa_X.txt
+JFileChooser fileChooser = new JFileChooser();
+fileChooser.setSelectedFile(new File("comanda_mesa_" + mesaId + ".txt"));
+if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+    File archivo = fileChooser.getSelectedFile();
+    // Escribe formato de ticket de texto plano
+    guardarTicket(archivo, detalles);
+}`
       }
     ],
     liberar: [
@@ -1106,28 +1205,68 @@ function App() {
         actor: 'DetallesMesasPanel (EDT)',
         action: 'Al presionar "Liberar", la interfaz verifica si jTable1 tiene filas (pedidos activos). Al detectar pedidos activos, solicita confirmación interactiva con JOptionPane.',
         query: 'N/A (Validación local sobre el JTable)',
-        icon: Monitor
+        icon: Monitor,
+        image: 'ABMMesas/MesaOcupada-1.png',
+        snippet: `// vistas/paneles/DetallesMesasPanel.java
+private void btnLiberarActionPerformed() {
+    if (mesaSeleccionada != null) {
+        // Valida si la tabla gráfica Swing tiene pedidos cargados en EDT
+        boolean tienePedidosActivos = jTable1.getRowCount() > 0;
+        // ...
+    }
+}`
       },
       {
         title: 'Confirmación del Usuario (JOptionPane)',
         actor: 'Diálogo de Confirmación (EDT)',
         action: 'Se muestra una alerta emergente advirtiendo al usuario: "¿Desea cerrar todos los pedidos abiertos y liberar la mesa?". El mozo selecciona "Sí".',
         icon: AlertTriangle,
-        query: 'N/A'
+        query: 'N/A',
+        image: 'ABMMesas/SePreguntaSiQuiereLiberarLaMesa-2.png',
+        snippet: `// vistas/paneles/DetallesMesasPanel.java
+if (tienePedidosActivos) {
+    int opcion = javax.swing.JOptionPane.showConfirmDialog(
+            this,
+            "La mesa tiene pedidos abiertos. ¿Desea cerrarlos y liberar?",
+            "Confirmar Liberar Mesa",
+            javax.swing.JOptionPane.YES_NO_OPTION,
+            javax.swing.JOptionPane.WARNING_MESSAGE
+    );
+    if (opcion != javax.swing.JOptionPane.YES_OPTION) return; // Cancela
+}`
       },
       {
         title: 'Cierre de Comandas & Cambio de Estado',
         actor: 'MesaService (Backend)',
         action: 'El servicio busca los pedidos en estados ABIERTO, EN_COCINA o LISTO y los marca como CERRADO. Finalmente, actualiza el estado de la mesa a LIBRE.',
         query: 'UPDATE pedidos SET estado = \'CERRADO\' WHERE id_mesa = ? AND estado IN (\'ABIERTO\', \'EN_COCINA\', \'LISTO\'); UPDATE mesas SET estado = \'LIBRE\' WHERE id_mesa = ?',
-        icon: Database
+        icon: Database,
+        image: 'ABMMesas/Confirmacion-3.png',
+        snippet: `// com.restaurant.backend.service.MesaService
+public String liberar(int mesaId) {
+    // 1. Cierra todos los pedidos activos de la mesa
+    pedidoDAO.cerrarPedidosDeMesa(mesaId, EstadoPedido.CERRADO);
+    // 2. Modifica el estado de la mesa a libre
+    return mesaDAO.cambiarEstado(mesaId, EstadoMesa.LIBRE);
+}`
       },
       {
         title: 'Actualización Visual del Salón',
         actor: 'MesasPanel (EDT)',
         action: 'La base de datos retorna éxito. El panel de mesas se refresca asíncronamente y el botón de la mesa cambia de rojo (Ocupada) a verde (Libre).',
         query: 'N/A (Redibujado del grid de mesas en el EDT)',
-        icon: CheckCircle2
+        icon: CheckCircle2,
+        image: 'ABMMesas/NuevoEstadoDeMesa-4.png',
+        snippet: `// vistas/paneles/MesasPanel.java (Callback Done)
+private void colorearBotonesMesas(List<Mesa> listaMesas) {
+    for (Mesa m : listaMesas) {
+        JButton btn = botones[m.getNumero() - 1];
+        switch (m.getEstado()) {
+            case LIBRE -> btn.setBackground(new Color(51, 204, 0)); // Verde
+            case OCUPADA -> btn.setBackground(new Color(255, 51, 51)); // Rojo
+        }
+    }
+}`
       }
     ]
   };
@@ -2647,22 +2786,67 @@ function App() {
                   </span>
                 </div>
 
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted font-bold font-mono uppercase" style={{ color: 'var(--text-muted)' }}>Descripción del Evento:</p>
-                    <p className="text-secondary text-base leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                      {flows[simFlow][simStep].action}
-                    </p>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Left Column: UI Interface capture */}
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted font-bold font-mono uppercase" style={{ color: 'var(--text-muted)' }}>Captura de Interfaz de Usuario:</p>
+                    <div className="bg-code-bg rounded-xl border border-border overflow-hidden relative shadow-md flex items-center justify-center p-2" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                      <img
+                        src={`/imgsistema/${flows[simFlow][simStep].image}`}
+                        alt={flows[simFlow][simStep].title}
+                        className="rounded-lg object-contain w-full h-auto max-h-[260px] bg-black"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          const parent = e.target.parentElement;
+                          if (!parent.querySelector('.image-error-fallback')) {
+                            const fallback = document.createElement('div');
+                            fallback.className = 'image-error-fallback flex flex-col items-center justify-center p-6 text-center text-muted w-full h-[200px]';
+                            fallback.style.color = 'var(--text-muted)';
+                            fallback.innerHTML = `
+                              <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-10 h-10 text-primary mb-2" style="color:var(--primary);"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                              <p class="text-xs font-semibold text-white">Interfaz: ${flows[simFlow][simStep].image.split('/').pop()}</p>
+                              <p class="text-[10px] mt-0.5 text-muted" style="color:var(--text-muted)">Ruta: /imgsistema/${flows[simFlow][simStep].image}</p>
+                            `;
+                            parent.appendChild(fallback);
+                          }
+                        }}
+                      />
+                    </div>
                   </div>
 
-                  {flows[simFlow][simStep].query !== 'N/A' && (
-                    <div className="bg-code-bg border border-border p-4 rounded-xl space-y-2" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
-                      <p className="text-[10px] text-primary font-bold font-mono tracking-wider" style={{ color: 'var(--primary)' }}>Sentencia SQL / Transacción BD:</p>
-                      <code className="text-xs text-secondary font-mono leading-normal" style={{ color: '#d1c7bd' }}>
-                        {flows[simFlow][simStep].query}
-                      </code>
+                  {/* Right Column: Code Snippet & Actions */}
+                  <div className="space-y-4 flex flex-col justify-between">
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted font-bold font-mono uppercase" style={{ color: 'var(--text-muted)' }}>Descripción del Proceso:</p>
+                        <p className="text-secondary text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                          {flows[simFlow][simStep].action}
+                        </p>
+                      </div>
+
+                      {flows[simFlow][simStep].query !== 'N/A' && (
+                        <div className="bg-code-bg border border-border p-3 rounded-xl space-y-1" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                          <p className="text-[9px] text-primary font-bold font-mono tracking-wider" style={{ color: 'var(--primary)' }}>Consulta SQL ejecutada:</p>
+                          <code className="text-[11px] text-secondary font-mono leading-tight block truncate" title={flows[simFlow][simStep].query} style={{ color: '#d1c7bd' }}>
+                            {flows[simFlow][simStep].query}
+                          </code>
+                        </div>
+                      )}
                     </div>
-                  )}
+
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted font-bold font-mono uppercase" style={{ color: 'var(--text-muted)' }}>Código Clave del Evento:</p>
+                      <div className="bg-code-bg border border-border rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                        <div className="bg-card px-4 py-1.5 border-b border-border flex justify-between items-center text-[10px] font-mono text-muted" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                          <span>java_action_snippet</span>
+                          <span>Java / SQL</span>
+                        </div>
+                        <pre className="p-3 overflow-auto font-mono text-[10px] text-secondary leading-normal max-h-[160px] bg-code-bg" style={{ color: '#d1c7bd', backgroundColor: 'var(--code-bg)' }}>
+                          <code>{flows[simFlow][simStep].snippet}</code>
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex justify-between pt-4 border-t border-border" style={{ borderColor: 'var(--border)' }}>
