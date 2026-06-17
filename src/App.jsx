@@ -58,7 +58,7 @@ public final class ConexionDB {
 
         this.dataSource = new HikariDataSource(config);
 
-        // Hotfix: Inicialización automática de la vista SQL de ventas
+        // Hotfix: Vista de ventas SQL inicializada automáticamente
         inicializarVistasBD();
     }
 
@@ -92,14 +92,14 @@ public final class ConexionDB {
     </formats>
     <includeBaseDirectory>false</includeBaseDirectory>
     <dependencySets>
-        <!-- 1. Desempaqueta dependencias runtime estándar de Maven -->
+        <!-- 1. Incluye dependencias de repositorio estándar (Backend y transitivas) -->
         <dependencySet>
             <outputDirectory>/</outputDirectory>
             <useProjectArtifact>true</useProjectArtifact>
             <unpack>true</unpack>
             <scope>runtime</scope>
         </dependencySet>
-        <!-- 2. Desempaqueta y mezcla los JARs locales asignados con alcance system -->
+        <!-- 2. Incluye y desempaqueta los JARs locales (AbsoluteLayout, LGoodDatePicker, jfreechart) -->
         <dependencySet>
             <outputDirectory>/</outputDirectory>
             <unpack>true</unpack>
@@ -107,6 +107,237 @@ public final class ConexionDB {
         </dependencySet>
     </dependencySets>
 </assembly>`
+  },
+  rootPom: {
+    name: 'pom.xml (Raíz)',
+    path: 'pom.xml',
+    language: 'xml',
+    desc: 'POM Padre orquestador del multi-módulo. Declara las carpetas hijas Backend y GUI y las propiedades de compilación globales.',
+    code: `<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.restaurant</groupId>
+    <artifactId>restaurant-parent</artifactId>
+    <version>1.0</version>
+    <packaging>pom</packaging>
+
+    <modules>
+        <module>Backend</module>
+        <module>GUI</module>
+    </modules>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>17</maven.compiler.release>
+    </properties>
+</project>`
+  },
+  backendPom: {
+    name: 'pom.xml (Backend)',
+    path: 'Backend/pom.xml',
+    language: 'xml',
+    desc: 'POM del Módulo Backend. Define dependencias para MySQL, HikariCP, SLF4J, y JUnit para tests unitarios.',
+    code: `<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.restaurant</groupId>
+        <artifactId>restaurant-parent</artifactId>
+        <version>1.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>Backend</artifactId>
+    <packaging>jar</packaging>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>17</maven.compiler.release>
+    </properties>
+
+    <dependencies>
+        <!-- MySQL JDBC Driver -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <version>9.1.0</version>
+        </dependency>
+        <!-- HikariCP Connection Pool -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+            <version>5.1.0</version>
+        </dependency>
+        <!-- SLF4J (required by HikariCP for logging) -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.13</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>2.0.13</version>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- JUnit Jupiter for Unit Testing -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <version>5.10.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <version>5.10.1</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>`
+  },
+  guiPom: {
+    name: 'pom.xml (GUI)',
+    path: 'GUI/pom.xml',
+    language: 'xml',
+    desc: 'POM del Módulo GUI. Configura el directorio fuente de NetBeans e integra las librerías locales AbsoluteLayout, LGoodDatePicker y jfreechart con alcance system.',
+    code: `<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.restaurant</groupId>
+        <artifactId>restaurant-parent</artifactId>
+        <version>1.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>GUI</artifactId>
+    <packaging>jar</packaging>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>17</maven.compiler.release>
+        <!-- Directorio fuente de NetBeans (sin la estructura src/main/java estándar) -->
+        <sourceDirectory>\${project.basedir}/src</sourceDirectory>
+    </properties>
+
+    <dependencies>
+        <!-- Módulo Backend (clases de modelo, servicio y DAO) -->
+        <dependency>
+            <groupId>com.restaurant</groupId>
+            <artifactId>Backend</artifactId>
+            <version>1.0</version>
+        </dependency>
+
+        <!-- JARs locales en lib/ usando system scope -->
+        <!-- AbsoluteLayout — layout manager de NetBeans -->
+        <dependency>
+            <groupId>org.netbeans.external</groupId>
+            <artifactId>AbsoluteLayout</artifactId>
+            <version>local</version>
+            <scope>system</scope>
+            <systemPath>\${project.basedir}/lib/AbsoluteLayout.jar</systemPath>
+        </dependency>
+
+        <!-- LGoodDatePicker — selector de fechas -->
+        <dependency>
+            <groupId>com.github.lgooddatepicker</groupId>
+            <artifactId>LGoodDatePicker</artifactId>
+            <version>local</version>
+            <scope>system</scope>
+            <systemPath>\${project.basedir}/lib/LGoodDatePicker.jar</systemPath>
+        </dependency>
+
+        <!-- JFreeChart — gráficos de reportes -->
+        <dependency>
+            <groupId>org.jfree</groupId>
+            <artifactId>jfreechart</artifactId>
+            <version>1.5.4</version>
+            <scope>system</scope>
+            <systemPath>\${project.basedir}/lib/jfreechart-1.5.4.jar</systemPath>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <!-- Apuntar al directorio src/ de NetBeans en lugar del estándar src/main/java -->
+        <sourceDirectory>\${project.basedir}/src</sourceDirectory>
+
+        <resources>
+            <!-- Incluir recursos (imágenes, etc.) desde el directorio fuente -->
+            <resource>
+                <directory>\${project.basedir}/src</directory>
+                <excludes>
+                    <exclude>**/*.java</exclude>
+                </excludes>
+            </resource>
+        </resources>
+
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <release>17</release>
+                    <encoding>UTF-8</encoding>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.3.0</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>vistas.Login</mainClass>
+                            <addClasspath>true</addClasspath>
+                            <classpathPrefix>lib/</classpathPrefix>
+                        </manifest>
+                    </archive>
+                    <finalName>RestoManager-GUI</finalName>
+                </configuration>
+            </plugin>
+
+            <!-- Maven Assembly Plugin para construir un JAR Único (Fat JAR) con todas las dependencias -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.6.0</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>vistas.Login</mainClass>
+                        </manifest>
+                    </archive>
+                    <descriptors>
+                        <descriptor>src/assembly/dep.xml</descriptor>
+                    </descriptors>
+                    <finalName>RestoManager</finalName>
+                    <appendAssemblyId>false</appendAssemblyId>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>make-assembly</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>`
   },
 
   // --- SERVICIOS & FACTORIES ---
@@ -704,7 +935,71 @@ const PROJECT_FLOW_STAGES = [
       { path: 'Stats/Stats (2).png', caption: 'Gráfico histórico de ingresos mensuales que muestra la evolución financiera.' }
     ]
   }
-];
+];const DEPENDENCY_DETAILS = {
+  mysql: {
+    name: 'mysql-connector-j',
+    version: '9.1.0',
+    scope: 'compile',
+    origin: 'Maven Central',
+    desc: 'Driver JDBC oficial de MySQL. Habilita la comunicación a bajo nivel entre el código Java de Backend y el servidor de base de datos TiDB Cloud enviando y ejecutando consultas SQL relacionales.'
+  },
+  hikaricp: {
+    name: 'HikariCP',
+    version: '5.1.0',
+    scope: 'compile',
+    origin: 'Maven Central',
+    desc: 'Pool de conexiones JDBC de alto rendimiento. Mantiene conexiones persistentes y pre-inicializadas abiertas en caliente. Evita la sobrecarga de handshake SSL de ~500ms al conectarse a TiDB Cloud, logrando consultas en <5ms.'
+  },
+  slf4j: {
+    name: 'slf4j-api',
+    version: '2.0.13',
+    scope: 'compile',
+    origin: 'Maven Central',
+    desc: 'API de fachada de registro de logs para Java. Proporciona una interfaz uniforme que es utilizada internamente por el pool de conexiones HikariCP para diagnosticar el estado del pool.'
+  },
+  slf4jsimple: {
+    name: 'slf4j-simple',
+    version: '2.0.13',
+    scope: 'runtime',
+    origin: 'Maven Central',
+    desc: 'Implementación básica de logging para SLF4J que escribe los mensajes informativos del pool de conexiones directamente a la consola estándar.'
+  },
+  junit: {
+    name: 'junit-jupiter (api & engine)',
+    version: '5.10.1',
+    scope: 'test',
+    origin: 'Maven Central',
+    desc: 'Framework para el desarrollo y ejecución de pruebas unitarias automatizadas. Valida el correcto funcionamiento de los DAOs y lógica transaccional de manera aislada.'
+  },
+  backend: {
+    name: 'com.restaurant:Backend',
+    version: '1.0',
+    scope: 'compile (Submódulo)',
+    origin: 'Módulo Interno',
+    desc: 'Dependencia del módulo de lógica. El frontend GUI requiere las clases del Backend (como los modelos, DAOs y Servicios) para orquestar la manipulación de datos.'
+  },
+  absoluteLayout: {
+    name: 'AbsoluteLayout.jar',
+    version: 'local (JAR de sistema)',
+    scope: 'system',
+    origin: 'local (GUI/lib/AbsoluteLayout.jar)',
+    desc: 'Gestor de diseño propio de NetBeans GUI Builder. Habilita la colocación absoluta (posicionamiento de coordenadas X,Y) sobre el lienzo del Form Builder de Swing.'
+  },
+  lgooddatepicker: {
+    name: 'LGoodDatePicker.jar',
+    version: 'local (JAR de sistema)',
+    scope: 'system',
+    origin: 'local (GUI/lib/LGoodDatePicker.jar)',
+    desc: 'Componente visual avanzado de selector de calendario y hora (DatePicker / TimePicker) integrado en la GUI Swing para seleccionar las fechas de reserva de mesas.'
+  },
+  jfreechart: {
+    name: 'jfreechart-1.5.4.jar',
+    version: '1.5.4 (JAR de sistema)',
+    scope: 'system',
+    origin: 'local (GUI/lib/jfreechart-1.5.4.jar)',
+    desc: 'Librería gráfica vectorial. Dibuja y renderiza gráficos circulares de facturación por categoría y gráficos lineales de historial mensual de ventas en el panel administrador.'
+  }
+};
 
 function App() {
   const [activeTab, setActiveTab] = useState('inicio');
@@ -725,6 +1020,11 @@ function App() {
 
   // Architecture layer selector
   const [selectedLayer, setSelectedLayer] = useState('vista');
+
+  // Interactive Maven Module Card
+  const [activatedMavenModule, setActivatedMavenModule] = useState('parent');
+  const [buildStep, setBuildStep] = useState(-1);
+  const [selectedDep, setSelectedDep] = useState(null);
 
   // Auto scroll interactive console logs
   useEffect(() => {
@@ -1450,56 +1750,505 @@ function App() {
             </div>
 
             {/* Core architecture mapping visually */}
-            <div className="bg-card border border-border rounded-3xl p-8" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-              <h3 className="text-xl font-bold text-white mb-6">Mapa Interactivo de Módulos Maven</h3>
+            <div className="bg-card border border-border rounded-3xl p-8 space-y-8" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
               
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
-                {/* 1. Parent POM */}
-                <div className="border border-border p-6 rounded-2xl bg-code-bg/60 text-center space-y-2 relative" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--code-bg)' }}>
-                  <div className="absolute top-2 right-2 text-[10px] text-muted font-mono" style={{ color: 'var(--text-muted)' }}>pom.xml</div>
-                  <Package className="w-8 h-8 text-primary mx-auto mb-2" style={{ color: 'var(--primary)' }} />
-                  <h4 className="font-bold text-white">restaurant-parent</h4>
-                  <p className="text-xs text-secondary" style={{ color: 'var(--text-secondary)' }}>Orquestador Raíz Maven</p>
-                  <span className="inline-block text-[10px] bg-primary-glow text-primary px-2 py-0.5 rounded" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' }}>
-                    pom packaging
-                  </span>
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-border pb-4 gap-4" style={{ borderColor: 'var(--border)' }}>
+                <div>
+                  <h3 className="text-xl font-bold text-white font-sans">Mapa Interactivo de Módulos Maven & Dependencias</h3>
+                  <p className="text-secondary text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>Haz clic en los módulos o en sus dependencias para explorar la arquitectura.</p>
                 </div>
+                <button
+                  onClick={() => {
+                    if (buildStep >= 0) {
+                      setBuildStep(-1);
+                    } else {
+                      setBuildStep(0);
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold font-mono border transition flex items-center gap-2 ${buildStep >= 0 ? 'bg-primary-glow border-primary text-primary' : 'border-border text-secondary hover:bg-card-hover hover:text-white'}`}
+                  style={buildStep >= 0 ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : { borderColor: 'var(--border)' }}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>{buildStep >= 0 ? 'Detener Simulación' : 'Simular Reactor Build (Fat JAR)'}</span>
+                </button>
+              </div>
 
-                <div className="hidden md:flex justify-center text-muted" style={{ color: 'var(--text-muted)' }}><ChevronRight /></div>
+              {/* REACTOR SIMULATOR VIEW (IF ACTIVE) */}
+              {buildStep >= 0 && (
+                <div className="bg-code-bg p-6 rounded-2xl border border-primary/20 space-y-4 animate-slide-up shadow-inner relative overflow-hidden" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>
+                  <div className="absolute right-4 top-4 text-xs font-mono text-muted" style={{ color: 'var(--text-muted)' }}>
+                    Paso {buildStep + 1} de 4
+                  </div>
+                  <h4 className="text-sm font-bold text-white font-mono uppercase tracking-wider text-primary" style={{ color: 'var(--primary)' }}>
+                    Simulador del Reactor de Construcción Maven (mvn clean package)
+                  </h4>
+                  
+                  {/* Compilation timeline steps */}
+                  <div className="grid grid-cols-4 gap-2">
+                    {[
+                      { step: 0, title: 'Parent POM', label: '1. Orquestación' },
+                      { step: 1, title: 'Backend Módulo', label: '2. Compilar Core' },
+                      { step: 2, title: 'GUI Módulo', label: '3. Compilar Vistas' },
+                      { step: 3, title: 'Assembly (dep.xml)', label: '4. Generar Fat JAR' }
+                    ].map((s) => (
+                      <button
+                        key={s.step}
+                        onClick={() => setBuildStep(s.step)}
+                        className={`text-left p-3 rounded-xl border transition-all ${buildStep === s.step ? 'bg-primary-glow border-primary text-white' : 'border-border text-secondary hover:bg-card-hover'}`}
+                        style={buildStep === s.step ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : { borderColor: 'var(--border)' }}
+                      >
+                        <p className="text-[10px] font-mono opacity-60">{s.label}</p>
+                        <p className="text-xs font-bold truncate">{s.title}</p>
+                      </button>
+                    ))}
+                  </div>
 
-                {/* 2. Backend Module */}
-                <div className="border border-border p-6 rounded-2xl bg-code-bg/60 text-center space-y-2 relative" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--code-bg)' }}>
-                  <div className="absolute top-2 right-2 text-[10px] text-muted font-mono" style={{ color: 'var(--text-muted)' }}>Backend/</div>
-                  <Server className="w-8 h-8 text-primary mx-auto mb-2" style={{ color: 'var(--primary)' }} />
-                  <h4 className="font-bold text-white">Módulo Backend</h4>
-                  <p className="text-xs text-secondary" style={{ color: 'var(--text-secondary)' }}>Model, DAO, Service & Controllers</p>
-                  <span className="inline-block text-[10px] bg-primary-glow text-primary px-2 py-0.5 rounded" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' }}>
-                    jar packaging
-                  </span>
+                  {/* Simulator Step Detail */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2 items-stretch">
+                    {/* Description */}
+                    <div className="md:col-span-2 space-y-3 bg-card p-5 rounded-xl border border-border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                      <h5 className="font-bold text-white text-sm">
+                        {buildStep === 0 && 'Paso 1: restaurant-parent — Inicialización y Orquestación'}
+                        {buildStep === 1 && 'Paso 2: Módulo Backend — Compilación de Clases y Generación de JAR'}
+                        {buildStep === 2 && 'Paso 3: Módulo GUI — Compilación de Vistas Swing'}
+                        {buildStep === 3 && 'Paso 4: maven-assembly-plugin — Desempaquetado y Fusión final (dep.xml)'}
+                      </h5>
+                      <p className="text-xs text-secondary leading-relaxed font-sans" style={{ color: 'var(--text-secondary)' }}>
+                        {buildStep === 0 && 'Maven lee el POM Padre y valida la estructura multi-módulo. Determina el orden de construcción (Reactor Build Order) estableciendo que Backend compilará primero, seguido de GUI. Además, inyecta configuraciones globales compartidas como el release target del compilador (Java 17) y codificación de caracteres UTF-8.'}
+                        {buildStep === 1 && 'Se compilan los 37 archivos de código fuente de la capa Backend (Entidades, interfaces DAO, implementaciones JDBC, y servicios). Se ejecutan las pruebas unitarias JUnit (si no se omite con -DskipTests) y se empaqueta la biblioteca en Backend/target/Backend-1.0.jar.'}
+                        {buildStep === 2 && 'Se compilan las 15 vistas y paneles visuales Swing de la GUI (incluyendo la lógica del Login, Menú de mozo, salón de mesas y reportes de JFreeChart). Se empaqueta un JAR preliminar en GUI/target/RestoManager-GUI.jar y se copian los archivos de configuración asociados.'}
+                        {buildStep === 3 && 'El plugin de ensamble lee el descriptor personalizado src/assembly/dep.xml. Descomprime en una carpeta temporal los contenidos de Backend-1.0.jar, las librerías remotas de Maven (HikariCP, MySQL Driver, SLF4J) y los tres JARs locales de lib/ (AbsoluteLayout, LGoodDatePicker, jfreechart) y los empaqueta juntos en un único archivo consolidado auto-ejecutable: RestoManager.jar (6.9 MB) listo para producción.'}
+                      </p>
+                      <div className="text-[11px] font-mono text-muted flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse" style={{ backgroundColor: 'var(--primary)' }}></span>
+                        <span>
+                          {buildStep === 0 && 'Comando: mvn clean (Fase de limpieza)'}
+                          {buildStep === 1 && 'Fase: compile & package (Genera Backend-1.0.jar)'}
+                          {buildStep === 2 && 'Fase: compile & resource copying (GUI)'}
+                          {buildStep === 3 && 'Fase: maven-assembly-plugin:single (Procesa dep.xml)'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Step Visual Animation */}
+                    <div className="bg-card rounded-xl border border-border p-5 flex flex-col justify-center items-center text-center relative overflow-hidden" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                      {buildStep === 0 && (
+                        <div className="space-y-3 animate-slide-up">
+                          <Package className="w-12 h-12 text-primary mx-auto animate-bounce" style={{ color: 'var(--primary)' }} />
+                          <div className="text-xs font-bold text-white">restaurant-parent</div>
+                          <div className="text-[10px] text-muted leading-tight" style={{ color: 'var(--text-muted)' }}>Analizando dependencias y estableciendo orden de compilación del Reactor.</div>
+                        </div>
+                      )}
+                      {buildStep === 1 && (
+                        <div className="space-y-3 animate-slide-up">
+                          <Server className="w-12 h-12 text-primary mx-auto" style={{ color: 'var(--primary)' }} />
+                          <div className="text-xs font-bold text-white">Backend-1.0.jar</div>
+                          <div className="text-[10px] text-success font-mono" style={{ color: 'var(--success)' }}>[INFO] BUILD SUCCESS</div>
+                          <div className="text-[10px] text-muted" style={{ color: 'var(--text-muted)' }}>Biblioteca empaquetada con éxito en target/</div>
+                        </div>
+                      )}
+                      {buildStep === 2 && (
+                        <div className="space-y-3 animate-slide-up">
+                          <Monitor className="w-12 h-12 text-primary mx-auto" style={{ color: 'var(--primary)' }} />
+                          <div className="text-xs font-bold text-white">RestoManager-GUI.jar</div>
+                          <div className="text-[10px] text-success font-mono" style={{ color: 'var(--success)' }}>[INFO] Compile Java 17 ok</div>
+                          <div className="text-[10px] text-muted animate-pulse" style={{ color: 'var(--text-muted)' }}>Esperando ensamble de dependencias...</div>
+                        </div>
+                      )}
+                      {buildStep === 3 && (
+                        <div className="space-y-3 animate-slide-up relative w-full h-full flex flex-col justify-center items-center">
+                          <div className="flex gap-2 justify-center items-center mb-1">
+                            <div className="w-6 h-6 rounded bg-card-hover border border-border flex items-center justify-center text-[8px] font-mono text-muted animate-ping" style={{ animationDuration: '3s' }}>lib</div>
+                            <div className="w-6 h-6 rounded bg-card-hover border border-border flex items-center justify-center text-[8px] font-mono text-muted animate-ping" style={{ animationDuration: '2.5s' }}>core</div>
+                            <div className="w-6 h-6 rounded bg-card-hover border border-border flex items-center justify-center text-[8px] font-mono text-muted animate-ping" style={{ animationDuration: '2s' }}>gui</div>
+                          </div>
+                          <div className="w-12 h-12 rounded-xl bg-primary-glow border border-primary flex items-center justify-center animate-pulse" style={{ backgroundColor: 'var(--primary-glow)', borderColor: 'var(--primary)' }}>
+                            <Package className="w-6 h-6 text-primary" style={{ color: 'var(--primary)' }} />
+                          </div>
+                          <div className="text-xs font-bold text-white mt-1 font-sans">RestoManager.jar (6.9MB)</div>
+                          <div className="text-[9px] text-muted uppercase font-mono tracking-wider mt-0.5" style={{ color: 'var(--text-muted)' }}>Fat JAR Único</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Simulator Controls */}
+                  <div className="flex justify-between items-center pt-2">
+                    <button
+                      disabled={buildStep === 0}
+                      onClick={() => setBuildStep(p => p - 1)}
+                      className="px-3 py-1.5 border border-border text-secondary rounded-lg text-xs font-semibold hover:bg-card-hover disabled:opacity-40 transition"
+                      style={{ borderColor: 'var(--border)' }}
+                    >
+                      Paso Anterior
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (buildStep === 3) {
+                          setBuildStep(-1);
+                        } else {
+                          setBuildStep(p => p + 1);
+                        }
+                      }}
+                      className="bg-primary hover:bg-primary-hover text-black px-3 py-1.5 rounded-lg text-xs font-semibold transition"
+                      style={{ backgroundColor: 'var(--primary)', color: '#000' }}
+                    >
+                      {buildStep === 3 ? 'Finalizar Simulación' : 'Siguiente Paso'}
+                    </button>
+                  </div>
                 </div>
+              )}
 
-                <div className="hidden md:flex justify-center text-muted" style={{ color: 'var(--text-muted)' }}><ChevronRight /></div>
+              {/* INTERACTIVE DEPENDENCY VISUAL GRAPH */}
+              <div className="bg-code-bg/30 p-6 rounded-2xl border border-border relative overflow-hidden" style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(26, 21, 17, 0.3)' }}>
+                <span className="absolute top-3 left-3 text-[10px] font-mono text-muted uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                  Visualizador de Estructura de Módulos (¡Haz clic en un módulo o dependencia!)
+                </span>
+                
+                {/* Visual Tree */}
+                <div className="pt-8 pb-4 flex flex-col items-center gap-6 relative w-full overflow-x-auto">
+                  
+                  {/* Row 1: Parent Orquestador */}
+                  <button
+                    onClick={() => {
+                      setActivatedMavenModule('parent');
+                      setSelectedDep(null);
+                    }}
+                    className={`p-4 rounded-xl border text-center transition min-w-[200px] z-10 ${activatedMavenModule === 'parent' && !selectedDep ? 'border-primary bg-primary-glow shadow-lg' : 'border-border bg-card hover:border-primary/50'}`}
+                    style={activatedMavenModule === 'parent' && !selectedDep ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : { borderColor: 'var(--border)' }}
+                  >
+                    <Package className="w-5 h-5 text-primary mx-auto mb-1" style={{ color: 'var(--primary)' }} />
+                    <div className="text-xs font-bold text-white font-sans">restaurant-parent</div>
+                    <div className="text-[9px] text-muted font-mono mt-0.5" style={{ color: 'var(--text-muted)' }}>pom.xml (Raíz)</div>
+                  </button>
 
-                {/* 3. GUI Module */}
-                <div className="border border-border p-6 rounded-2xl bg-code-bg/60 text-center space-y-2 relative" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--code-bg)' }}>
-                  <div className="absolute top-2 right-2 text-[10px] text-muted font-mono" style={{ color: 'var(--text-muted)' }}>GUI/</div>
-                  <Monitor className="w-8 h-8 text-primary mx-auto mb-2" style={{ color: 'var(--primary)' }} />
-                  <h4 className="font-bold text-white">Módulo GUI</h4>
-                  <p className="text-xs text-secondary" style={{ color: 'var(--text-secondary)' }}>Vistas Swing & Diseñador NetBeans</p>
-                  <span className="inline-block text-[10px] bg-primary-glow text-primary px-2 py-0.5 rounded" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' }}>
-                    jar-with-dependencies
-                  </span>
+                  {/* Horizontal/Vertical connector line visual trick */}
+                  <div className="w-0.5 h-6 bg-border" style={{ backgroundColor: 'var(--border)' }}></div>
+
+                  {/* Row 2: Submodules */}
+                  <div className="flex gap-16 md:gap-32 justify-center items-start relative w-full max-w-4xl px-4">
+                    {/* SVG Connector line background */}
+                    <div className="absolute inset-0 pointer-events-none flex justify-center items-start" style={{ height: '100px' }}>
+                      <svg className="w-full h-full opacity-35 stroke-primary" style={{ stroke: 'var(--primary)', strokeWidth: 1.5, fill: 'none' }}>
+                        <path d="M 220,0 L 220,20 L 100,20 L 100,60" className="hidden md:block" />
+                        <path d="M 220,0 L 220,20 L 340,20 L 340,60" className="hidden md:block" />
+                      </svg>
+                    </div>
+
+                    {/* Módulo Backend */}
+                    <div className="flex flex-col items-center gap-4 z-10">
+                      <button
+                        onClick={() => {
+                          setActivatedMavenModule('backend');
+                          setSelectedDep(null);
+                        }}
+                        className={`p-4 rounded-xl border text-center transition min-w-[180px] ${activatedMavenModule === 'backend' && !selectedDep ? 'border-primary bg-primary-glow shadow-lg' : 'border-border bg-card hover:border-primary/50'}`}
+                        style={activatedMavenModule === 'backend' && !selectedDep ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : { borderColor: 'var(--border)' }}
+                      >
+                        <Server className="w-5 h-5 text-primary mx-auto mb-1" style={{ color: 'var(--primary)' }} />
+                        <div className="text-xs font-bold text-white font-sans">Módulo Backend</div>
+                        <div className="text-[9px] text-muted font-mono mt-0.5" style={{ color: 'var(--text-muted)' }}>Backend/pom.xml (jar)</div>
+                      </button>
+
+                      <div className="w-0.5 h-4 bg-border" style={{ backgroundColor: 'var(--border)' }}></div>
+
+                      {/* Backend Dependencies list */}
+                      <div className="bg-card/40 rounded-xl border border-border p-3 space-y-2 min-w-[190px]" style={{ borderColor: 'var(--border)' }}>
+                        <p className="text-[9px] text-muted uppercase font-bold tracking-wider text-center" style={{ color: 'var(--text-muted)' }}>Dependencias</p>
+                        
+                        <button
+                          onClick={() => setSelectedDep('mysql')}
+                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'mysql' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-code-bg border-transparent text-secondary hover:bg-card-hover hover:text-white'}`}
+                          style={selectedDep === 'mysql' ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : {}}
+                        >
+                          mysql-connector-j
+                        </button>
+                        
+                        <button
+                          onClick={() => setSelectedDep('hikaricp')}
+                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'hikaricp' ? 'bg-primary-glow border-primary text-primary font-bold animate-pulse' : 'bg-code-bg border-transparent text-secondary hover:bg-card-hover hover:text-white'}`}
+                          style={selectedDep === 'hikaricp' ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : {}}
+                        >
+                          HikariCP (Pool)
+                        </button>
+                        
+                        <button
+                          onClick={() => setSelectedDep('slf4j')}
+                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'slf4j' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-code-bg border-transparent text-secondary hover:bg-card-hover hover:text-white'}`}
+                          style={selectedDep === 'slf4j' ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : {}}
+                        >
+                          slf4j-api & simple
+                        </button>
+
+                        <button
+                          onClick={() => setSelectedDep('junit')}
+                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'junit' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-code-bg border-transparent text-muted hover:bg-card-hover hover:text-white'}`}
+                          style={selectedDep === 'junit' ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : { color: 'var(--text-muted)' }}
+                        >
+                          junit-jupiter (test)
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Dependency flow arrow from Backend to GUI */}
+                    <div className="hidden md:flex flex-col items-center justify-center self-center" style={{ height: '70px' }}>
+                      <span className="text-[10px] font-mono text-primary font-bold bg-primary-glow px-2 py-0.5 rounded border border-primary/20 mb-1" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' }}>Depende</span>
+                      <div className="flex items-center gap-1">
+                        <div className="w-16 h-0.5 bg-gradient-to-r from-transparent to-primary" style={{ background: 'linear-gradient(to right, transparent, var(--primary))' }}></div>
+                        <ArrowRight className="w-4 h-4 text-primary animate-pulse" style={{ color: 'var(--primary)' }} />
+                      </div>
+                    </div>
+
+                    {/* Módulo GUI */}
+                    <div className="flex flex-col items-center gap-4 z-10">
+                      <button
+                        onClick={() => {
+                          setActivatedMavenModule('gui');
+                          setSelectedDep(null);
+                        }}
+                        className={`p-4 rounded-xl border text-center transition min-w-[180px] ${activatedMavenModule === 'gui' && !selectedDep ? 'border-primary bg-primary-glow shadow-lg' : 'border-border bg-card hover:border-primary/50'}`}
+                        style={activatedMavenModule === 'gui' && !selectedDep ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : { borderColor: 'var(--border)' }}
+                      >
+                        <Monitor className="w-5 h-5 text-primary mx-auto mb-1" style={{ color: 'var(--primary)' }} />
+                        <div className="text-xs font-bold text-white font-sans">Módulo GUI</div>
+                        <div className="text-[9px] text-muted font-mono mt-0.5" style={{ color: 'var(--text-muted)' }}>GUI/pom.xml (jar)</div>
+                      </button>
+
+                      <div className="w-0.5 h-4 bg-border" style={{ backgroundColor: 'var(--border)' }}></div>
+
+                      {/* GUI Dependencies list */}
+                      <div className="bg-card/40 rounded-xl border border-border p-3 space-y-2 min-w-[190px]" style={{ borderColor: 'var(--border)' }}>
+                        <p className="text-[9px] text-muted uppercase font-bold tracking-wider text-center" style={{ color: 'var(--text-muted)' }}>Dependencias</p>
+                        
+                        <button
+                          onClick={() => setSelectedDep('backend')}
+                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'backend' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-code-bg border-transparent text-primary hover:bg-card-hover hover:text-white'}`}
+                          style={selectedDep === 'backend' ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : { color: 'var(--primary)' }}
+                        >
+                          Backend (Modulo)
+                        </button>
+                        
+                        <button
+                          onClick={() => setSelectedDep('absoluteLayout')}
+                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'absoluteLayout' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-code-bg border-transparent text-secondary hover:bg-card-hover hover:text-white'}`}
+                          style={selectedDep === 'absoluteLayout' ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : {}}
+                        >
+                          AbsoluteLayout.jar
+                        </button>
+                        
+                        <button
+                          onClick={() => setSelectedDep('lgooddatepicker')}
+                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'lgooddatepicker' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-code-bg border-transparent text-secondary hover:bg-card-hover hover:text-white'}`}
+                          style={selectedDep === 'lgooddatepicker' ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : {}}
+                        >
+                          LGoodDatePicker.jar
+                        </button>
+
+                        <button
+                          onClick={() => setSelectedDep('jfreechart')}
+                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'jfreechart' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-code-bg border-transparent text-secondary hover:bg-card-hover hover:text-white'}`}
+                          style={selectedDep === 'jfreechart' ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : {}}
+                        >
+                          jfreechart-1.5.4.jar
+                        </button>
+                      </div>
+                    </div>
+
+                  </div>
                 </div>
               </div>
 
-              {/* Database connector segment */}
-              <div className="mt-8 pt-8 border-t border-border flex flex-col items-center gap-3" style={{ borderColor: 'var(--border)' }}>
-                <Database className="w-10 h-10 text-primary animate-pulse" style={{ color: 'var(--primary)' }} />
-                <h4 className="font-bold text-white">Persistencia Distribuida (TiDB Cloud)</h4>
-                <p className="text-center text-secondary text-sm max-w-xl" style={{ color: 'var(--text-secondary)' }}>
-                  La base de datos MySQL se hospeda de forma remota en TiDB Cloud con seguridad SSL activa. El pool de conexiones mantiene el canal abierto constantemente para evitar retardos.
-                </p>
-              </div>
+              {/* MAVEN MODULE DETAILS OR MAVEN DEPENDENCY DETAILS DETAIL BOX */}
+              {selectedDep ? (
+                /* DEPENDENCY DETAIL VIEW */
+                <div className="bg-code-bg p-6 rounded-2xl border border-primary/30 space-y-4 animate-slide-up shadow-inner relative" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'rgba(249, 155, 32, 0.3)' }}>
+                  <button
+                    onClick={() => setSelectedDep(null)}
+                    className="absolute top-4 right-4 text-xs text-muted hover:text-white font-mono"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    [Cerrar Detalle]
+                  </button>
+                  
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-primary-glow border border-primary/20 flex items-center justify-center" style={{ backgroundColor: 'var(--primary-glow)' }}>
+                      <FileCode className="w-5 h-5 text-primary" style={{ color: 'var(--primary)' }} />
+                    </div>
+                    <div>
+                      <span className="inline-block text-[10px] uppercase font-bold tracking-wider text-primary bg-primary-glow px-2 py-0.5 rounded" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' }}>
+                        Alcance Maven: {DEPENDENCY_DETAILS[selectedDep === 'slf4j' ? 'slf4j' : selectedDep].scope}
+                      </span>
+                      <h4 className="text-lg font-bold text-white mt-1">
+                        {DEPENDENCY_DETAILS[selectedDep === 'slf4j' ? 'slf4j' : selectedDep].name} (v{DEPENDENCY_DETAILS[selectedDep === 'slf4j' ? 'slf4j' : selectedDep].version})
+                      </h4>
+                    </div>
+                  </div>
+
+                  <p className="text-secondary text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                    {DEPENDENCY_DETAILS[selectedDep === 'slf4j' ? 'slf4j' : selectedDep].desc}
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                    <div className="bg-card p-4 rounded-xl border border-border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-muted block mb-1" style={{ color: 'var(--text-muted)' }}>Origen del Artefacto</span>
+                      <span className="text-xs font-semibold text-white">{DEPENDENCY_DETAILS[selectedDep === 'slf4j' ? 'slf4j' : selectedDep].origin}</span>
+                    </div>
+                    <div className="bg-card p-4 rounded-xl border border-border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-muted block mb-1" style={{ color: 'var(--text-muted)' }}>Tipo de Carga</span>
+                      <span className="text-xs font-semibold text-white">
+                        {selectedDep === 'backend' ? 'Dependencia Interna de Módulo' : 
+                         DEPENDENCY_DETAILS[selectedDep === 'slf4j' ? 'slf4j' : selectedDep].scope === 'system' ? 'Librería JAR Local Física (GUI/lib/)' : 'Descargada desde Repositorio Maven Central'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Redirection button if applicable */}
+                  <div className="pt-2 flex items-center gap-2">
+                    <span className="text-xs text-muted font-bold font-mono uppercase mr-2" style={{ color: 'var(--text-muted)' }}>Ver en la configuración:</span>
+                    <button
+                      onClick={() => {
+                        if (selectedDep === 'mysql' || selectedDep === 'hikaricp' || selectedDep === 'slf4j' || selectedDep === 'junit') {
+                          setActiveCodeFile('backendPom');
+                        } else if (selectedDep === 'backend' || selectedDep === 'absoluteLayout' || selectedDep === 'lgooddatepicker' || selectedDep === 'jfreechart') {
+                          setActiveCodeFile('guiPom');
+                        }
+                        setActiveTab('ide');
+                      }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                    >
+                      <FileCode className="w-3 h-3" />
+                      <span>{selectedDep === 'mysql' || selectedDep === 'hikaricp' || selectedDep === 'slf4j' || selectedDep === 'junit' ? 'Backend/pom.xml' : 'GUI/pom.xml'}</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* STANDARD MODULE DETAILS WINDOW */
+                <>
+                  {activatedMavenModule === 'parent' && (
+                    <div className="bg-code-bg p-6 rounded-2xl border border-border space-y-4 animate-slide-up shadow-inner animate-fade-in" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                      <h4 className="text-lg font-bold text-white flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-primary" style={{ backgroundColor: 'var(--primary)' }}></span>
+                        📦 restaurant-parent (POM Raíz) — Orquestador Multi-módulo
+                      </h4>
+                      <p className="text-secondary text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                        Actúa como el orquestador principal del proyecto multi-módulo. Declara los sub-módulos para compilar en cascada (<code>Backend</code> y <code>GUI</code>) y define las propiedades globales compartidas, como la codificación de fuentes UTF-8 y la versión de Java compilador compatible (Java 17).
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-card p-4 rounded-xl border border-border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-muted block mb-1" style={{ color: 'var(--text-muted)' }}>Sub-módulos Declarados</span>
+                          <span className="text-sm font-semibold text-white">Backend (Lógica y DAO) · GUI (Swing Desktop)</span>
+                        </div>
+                        <div className="bg-card p-4 rounded-xl border border-border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-muted block mb-1" style={{ color: 'var(--text-muted)' }}>Versión JDK Compilador</span>
+                          <span className="text-sm font-semibold text-white">Java 17 (Release target 17)</span>
+                        </div>
+                      </div>
+                      <div className="pt-2 flex items-center gap-2">
+                        <span className="text-xs text-muted font-bold font-mono uppercase mr-2" style={{ color: 'var(--text-muted)' }}>Ver Configuración:</span>
+                        <button
+                          onClick={() => { setActiveCodeFile('rootPom'); setActiveTab('ide'); }}
+                          className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5 animate-pulse"
+                          style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                        >
+                          <FileCode className="w-3 h-3" />
+                          <span>pom.xml (Raíz)</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {activatedMavenModule === 'backend' && (
+                    <div className="bg-code-bg p-6 rounded-2xl border border-border space-y-4 animate-slide-up shadow-inner animate-fade-in" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                      <h4 className="text-lg font-bold text-white flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-primary" style={{ backgroundColor: 'var(--primary)' }}></span>
+                        ⚙️ Módulo Backend (Negocio & Acceso a Datos) — Configuración pom.xml
+                      </h4>
+                      <p className="text-secondary text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                        Módulo empaquetado como JAR tradicional. Aloja la persistencia y la lógica del negocio del restaurante, aislando por completo la interacción directa con TiDB Cloud.
+                      </p>
+                      <div className="space-y-2">
+                        <span className="text-[10px] uppercase font-bold tracking-wider text-muted block" style={{ color: 'var(--text-muted)' }}>Dependencias Maven Declaradas (pom.xml) - Haz clic para ver detalles</span>
+                        <div className="flex flex-wrap gap-2">
+                          <button onClick={() => setSelectedDep('mysql')} className="text-xs bg-card px-2.5 py-1.5 rounded border border-border text-secondary font-mono hover:border-primary/45 hover:text-primary transition" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>mysql-connector-j: 9.1.0</button>
+                          <button onClick={() => setSelectedDep('hikaricp')} className="text-xs bg-card px-2.5 py-1.5 rounded border border-border text-secondary font-mono hover:border-primary/45 hover:text-primary transition" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>HikariCP: 5.1.0 (Pool en caliente)</button>
+                          <button onClick={() => setSelectedDep('slf4j')} className="text-xs bg-card px-2.5 py-1.5 rounded border border-border text-secondary font-mono hover:border-primary/45 hover:text-primary transition" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>slf4j-api / simple: 2.0.13</button>
+                          <button onClick={() => setSelectedDep('junit')} className="text-xs bg-card px-2.5 py-1.5 rounded border border-border text-muted font-mono hover:border-primary/45 hover:text-primary transition" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}>junit-jupiter: 5.10.1 (test)</button>
+                        </div>
+                      </div>
+                      <div className="pt-2 flex items-center gap-2">
+                        <span className="text-xs text-muted font-bold font-mono uppercase mr-2" style={{ color: 'var(--text-muted)' }}>Ver Configuración:</span>
+                        <button
+                          onClick={() => { setActiveCodeFile('backendPom'); setActiveTab('ide'); }}
+                          className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5 animate-pulse"
+                          style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                        >
+                          <FileCode className="w-3 h-3" />
+                          <span>Backend/pom.xml</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {activatedMavenModule === 'gui' && (
+                    <div className="bg-code-bg p-6 rounded-2xl border border-border space-y-4 animate-slide-up shadow-inner animate-fade-in" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                      <h4 className="text-lg font-bold text-white flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-primary" style={{ backgroundColor: 'var(--primary)' }}></span>
+                        🖼️ Módulo GUI (Presentación Swing & Empacado Fat JAR) — Configuración pom.xml
+                      </h4>
+                      <p className="text-secondary text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                        Módulo del cliente Swing. Sobrescribe la estructura por defecto apuntando las fuentes de código a <code>src/</code> para ser compatible con NetBeans GUI Builder. Ejecuta `maven-assembly-plugin` para unir todo en un único JAR final ejecutable.
+                      </p>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-muted block" style={{ color: 'var(--text-muted)' }}>Dependencia de Módulo Interno</span>
+                          <div className="flex flex-wrap gap-2">
+                            <button onClick={() => setSelectedDep('backend')} className="text-xs bg-card px-2.5 py-1 rounded border border-border text-primary font-mono hover:border-primary/45 hover:bg-primary/5 transition" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--primary)' }}>Backend (com.restaurant:Backend:1.0)</button>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-muted block" style={{ color: 'var(--text-muted)' }}>Librerías de Sistema Embebidas (lib/) - Haz clic para ver detalles</span>
+                          <div className="flex flex-wrap gap-2">
+                            <button onClick={() => setSelectedDep('absoluteLayout')} className="text-xs bg-card px-2.5 py-1 rounded border border-border text-secondary font-mono hover:border-primary/45 hover:text-primary transition" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>AbsoluteLayout.jar</button>
+                            <button onClick={() => setSelectedDep('lgooddatepicker')} className="text-xs bg-card px-2.5 py-1 rounded border border-border text-secondary font-mono hover:border-primary/45 hover:text-primary transition" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>LGoodDatePicker.jar</button>
+                            <button onClick={() => setSelectedDep('jfreechart')} className="text-xs bg-card px-2.5 py-1 rounded border border-border text-secondary font-mono hover:border-primary/45 hover:text-primary transition" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>jfreechart-1.5.4.jar</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-muted font-bold font-mono uppercase mr-2" style={{ color: 'var(--text-muted)' }}>Ver Configuración:</span>
+                        <button
+                          onClick={() => { setActiveCodeFile('guiPom'); setActiveTab('ide'); }}
+                          className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
+                          style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                        >
+                          <FileCode className="w-3 h-3" />
+                          <span>GUI/pom.xml</span>
+                        </button>
+                        <button
+                          onClick={() => { setActiveCodeFile('depXml'); setActiveTab('ide'); }}
+                          className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
+                          style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                        >
+                          <FileCode className="w-3 h-3" />
+                          <span>src/assembly/dep.xml</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Database connector segment */}
+            <div className="mt-8 pt-8 border-t border-border flex flex-col items-center gap-3" style={{ borderColor: 'var(--border)' }}>
+              <Database className="w-10 h-10 text-primary animate-pulse" style={{ color: 'var(--primary)' }} />
+              <h4 className="font-bold text-white">Persistencia Distribuida (TiDB Cloud)</h4>
+              <p className="text-center text-secondary text-sm max-w-xl" style={{ color: 'var(--text-secondary)' }}>
+                La base de datos MySQL se hospeda de forma remota en TiDB Cloud con seguridad SSL activa. El pool de conexiones mantiene el canal abierto constantemente para evitar retardos.
+              </p>
             </div>
           </div>
         )}
@@ -1749,14 +2498,38 @@ function App() {
               </div>
 
               <div className="space-y-1 pt-4">
-                <p className="text-xs text-muted font-mono px-3 mb-1" style={{ color: 'var(--text-muted)' }}>[Empaquetador]</p>
+                <p className="text-xs text-muted font-mono px-3 mb-1" style={{ color: 'var(--text-muted)' }}>[Empaquetador & Configs]</p>
+                <button 
+                  onClick={() => setActiveCodeFile('rootPom')}
+                  className={`w-full text-left text-xs font-mono px-3 py-2 rounded-lg flex items-center gap-2 transition ${activeCodeFile === 'rootPom' ? 'bg-primary-glow text-primary font-semibold' : 'text-secondary hover:bg-card-hover'}`}
+                  style={activeCodeFile === 'rootPom' ? { color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : {}}
+                >
+                  <FileCode className="w-3.5 h-3.5" />
+                  <span>pom.xml (Raíz)</span>
+                </button>
+                <button 
+                  onClick={() => setActiveCodeFile('backendPom')}
+                  className={`w-full text-left text-xs font-mono px-3 py-2 rounded-lg flex items-center gap-2 transition ${activeCodeFile === 'backendPom' ? 'bg-primary-glow text-primary font-semibold' : 'text-secondary hover:bg-card-hover'}`}
+                  style={activeCodeFile === 'backendPom' ? { color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : {}}
+                >
+                  <FileCode className="w-3.5 h-3.5" />
+                  <span>Backend/pom.xml</span>
+                </button>
+                <button 
+                  onClick={() => setActiveCodeFile('guiPom')}
+                  className={`w-full text-left text-xs font-mono px-3 py-2 rounded-lg flex items-center gap-2 transition ${activeCodeFile === 'guiPom' ? 'bg-primary-glow text-primary font-semibold' : 'text-secondary hover:bg-card-hover'}`}
+                  style={activeCodeFile === 'guiPom' ? { color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : {}}
+                >
+                  <FileCode className="w-3.5 h-3.5" />
+                  <span>GUI/pom.xml</span>
+                </button>
                 <button 
                   onClick={() => setActiveCodeFile('depXml')}
                   className={`w-full text-left text-xs font-mono px-3 py-2 rounded-lg flex items-center gap-2 transition ${activeCodeFile === 'depXml' ? 'bg-primary-glow text-primary font-semibold' : 'text-secondary hover:bg-card-hover'}`}
                   style={activeCodeFile === 'depXml' ? { color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : {}}
                 >
                   <FileCode className="w-3.5 h-3.5" />
-                  <span>dep.xml</span>
+                  <span>dep.xml (Assembly)</span>
                 </button>
               </div>
             </div>
