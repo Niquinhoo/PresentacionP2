@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import { generarInforme } from './generarInforme.js';
 import { 
   BookOpen, 
   Layers, 
@@ -1488,6 +1489,10 @@ public boolean desactivar(int idProducto) throws SQLException {
     }, 150);
   };
 
+  // ── PDF REPORT GENERATOR ─────────────────────────────────────────────────
+  // Full implementation lives in src/generarInforme.js
+  const handleGenerarInforme = () => { generarInforme(); };
+
   return (
     <div className="min-h-screen flex bg-page text-white" style={{ backgroundColor: 'var(--bg-page)' }}>
       {/* Sidebar Navigation */}
@@ -1565,7 +1570,29 @@ public boolean desactivar(int idProducto) throws SQLException {
         </nav>
 
         {/* Footer info */}
-        <div className="p-6 border-t border-border" style={{ borderColor: 'var(--border)' }}>
+        <div className="p-6 border-t border-border space-y-3" style={{ borderColor: 'var(--border)' }}>
+          {/* Download PDF button */}
+          <button
+            id="btn-descargar-informe"
+            onClick={generarInforme}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold text-sm transition-all duration-200"
+            style={{
+              background: 'linear-gradient(135deg, #f99b20 0%, #e07010 100%)',
+              color: '#fff',
+              boxShadow: '0 4px 18px rgba(249,155,32,0.35)',
+              letterSpacing: '0.02em',
+            }}
+            onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.1)'}
+            onMouseLeave={e => e.currentTarget.style.filter = 'brightness(1)'}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Descargar Informe PDF
+          </button>
+
           <div className="bg-card p-4 rounded-xl border border-border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
             <span className="inline-block text-[10px] uppercase font-bold tracking-wider text-primary bg-primary-glow px-2 py-0.5 rounded mb-1" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' }}>
               Hotfix Aplicado
