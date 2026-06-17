@@ -19,17 +19,17 @@ import {
   Sparkles,
   Server,
   UserCheck,
-  Check,
-  PieChart
+  Check
 } from 'lucide-react';
 
 // Code snippets to display in the Interactive IDE
 const CODE_SNIPPETS = {
+  // --- PERSISTENCIA / CONFIGURACIONES ---
   conexionDB: {
     name: 'ConexionDB.java',
     path: 'Backend/src/main/java/com/restaurant/backend/util/ConexionDB.java',
     language: 'java',
-    desc: 'Implementación del pool de conexiones HikariCP y la inicialización automática de vistas SQL para TiDB Cloud.',
+    desc: 'Pool de conexiones HikariCP configurado para TiDB Cloud con soporte SSL y cacheado de PreparedStatements.',
     code: `package com.restaurant.backend.util;
 
 import com.zaxxer.hikari.HikariConfig;
@@ -78,6 +78,38 @@ public final class ConexionDB {
     }
 }`
   },
+  depXml: {
+    name: 'dep.xml',
+    path: 'GUI/src/assembly/dep.xml',
+    language: 'xml',
+    desc: 'Descriptor de ensamble de Maven personalizado para desempaquetar y fusionar dependencias tradicionales (HikariCP, MySQL) y de sistema (AbsoluteLayout, LGoodDatePicker, jfreechart) en un Fat JAR.',
+    code: `<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.2.0 http://maven.apache.org/xsd/assembly-2.2.0.xsd">
+    <id>jar-with-dependencies</id>
+    <formats>
+        <format>jar</format>
+    </formats>
+    <includeBaseDirectory>false</includeBaseDirectory>
+    <dependencySets>
+        <!-- 1. Desempaqueta dependencias runtime estándar de Maven -->
+        <dependencySet>
+            <outputDirectory>/</outputDirectory>
+            <useProjectArtifact>true</useProjectArtifact>
+            <unpack>true</unpack>
+            <scope>runtime</scope>
+        </dependencySet>
+        <!-- 2. Desempaqueta y mezcla los JARs locales asignados con alcance system -->
+        <dependencySet>
+            <outputDirectory>/</outputDirectory>
+            <unpack>true</unpack>
+            <scope>system</scope>
+        </dependencySet>
+    </dependencySets>
+</assembly>`
+  },
+
+  // --- SERVICIOS & FACTORIES ---
   servicioFactory: {
     name: 'ServicioFactory.java',
     path: 'Backend/src/main/java/com/restaurant/backend/service/ServicioFactory.java',
@@ -120,6 +152,157 @@ public class ServicioFactory {
     }
 }`
   },
+  mesaService: {
+    name: 'MesaService.java',
+    path: 'Backend/src/main/java/com/restaurant/backend/service/MesaService.java',
+    language: 'java',
+    desc: 'Lógica del servicio de mesas. Cierra automáticamente los pedidos activos cuando se libera una mesa, actualizando la base de datos.',
+    code: `package com.restaurant.backend.service;
+
+import com.restaurant.backend.model.EstadoMesa;
+import com.restaurant.backend.model.EstadoPedido;
+import com.restaurant.backend.model.Pedido;
+
+public class MesaService {
+    private final MesaDAO mesaDAO;
+    private final PedidoDAO pedidoDAO;
+
+    public String liberar(int mesaId) {
+        Mesa mesa = mesaDAO.getMesaPorId(mesaId);
+        if (mesa == null) {
+            return "No se encontro la mesa";
+        }
+
+        // Cierra de manera arbitraria todos los pedidos abiertos vinculados
+        for (Pedido pedido : pedidoDAO.getPedidosPorMesa(mesaId)) {
+            if (pedido.getEstado() == EstadoPedido.ABIERTO || 
+                pedido.getEstado() == EstadoPedido.EN_COCINA || 
+                pedido.getEstado() == EstadoPedido.LISTO) {
+                
+                pedidoDAO.ModificarEstado(pedido.getIdPedido(), EstadoPedido.CERRADO);
+            }
+        }
+
+        // Cambia el estado de la mesa a libre
+        return mesaDAO.cambiarEstado(mesaId, EstadoMesa.LIBRE);
+    }
+}`
+  },
+  pedidoService: {
+    name: 'PedidoService.java',
+    path: 'Backend/src/main/java/com/restaurant/backend/service/PedidoService.java',
+    language: 'java',
+    desc: 'Control transaccional para la creación de comandas. Valida stock de insumos antes de registrar el pedido y persistirlo.',
+    code: `package com.restaurant.backend.service;
+
+import com.restaurant.backend.dao.PedidoDAO;
+import com.restaurant.backend.model.DetallePedido;
+import com.restaurant.backend.model.Pedido;
+import java.util.List;
+
+public class PedidoService {
+    private final PedidoDAO pedidoDAO;
+    private final MesaService mesaService;
+    private final ProductoService productoService;
+
+    // Crear un pedido asociando detalles y descontando stock en caliente
+    public String crearPedido(Mesa mesa, Usuario usuario, List<DetallePedido> detalles, String observacion) {
+        // Validar stock antes de persistir
+        for (DetallePedido detalle : detalles) {
+            String validStock = productoService.validarStockDisponible(
+                detalle.getProducto().getIdProducto(), 
+                detalle.getCantidad()
+            );
+            if (validStock != null) return validStock; // Error si no hay stock
+        }
+
+        Pedido pedido = new Pedido();
+        pedido.setMesa(mesa);
+        pedido.setUsuario(usuario);
+        pedido.setObservacion(observacion);
+
+        // Dispara la transacción en base de datos
+        String res = pedidoDAO.Insertar(pedido, detalles);
+        if (!res.toLowerCase().contains("correctamente")) return res;
+
+        // Descuenta stock físico de inmediato si la BD guardó el lote con éxito
+        for (DetallePedido d : detalles) {
+            productoService.descontarStock(d.getProducto().getIdProducto(), d.getCantidad());
+        }
+
+        return mesaService.ocupar(mesa.getIdMesa());
+    }
+}`
+  },
+
+  // --- CAPA DAO (ACCESO A DATOS) ---
+  pedidoDAO: {
+    name: 'PedidoDAOImpl.java',
+    path: 'Backend/src/main/java/com/restaurant/backend/dao/PedidoDAOImpl.java',
+    language: 'java',
+    desc: 'Implementación JDBC transaccional del DAO de pedidos. Garantiza Atomicidad usando setAutoCommit(false) y rollback ante fallos.',
+    code: `package com.restaurant.backend.dao;
+
+import com.restaurant.backend.model.DetallePedido;
+import com.restaurant.backend.model.Pedido;
+import java.sql.*;
+import java.util.List;
+
+public class PedidoDAOImpl implements PedidoDAO {
+
+    @Override
+    public String Insertar(Pedido p, List<DetallePedido> detalles) {
+        String queryPedido = "INSERT INTO pedidos(id_mesa, id_usuario, created_at, total, estado, observacion) VALUES(?,?,?,?,?,?)";
+        String queryDetalles = "INSERT INTO detalle_pedido(id_pedido, id_producto, cantidad, precio_unitario, subtotal) VALUES(?,?,?,?,?)";
+        Connection conn = null;
+
+        try {
+            conn = DatabaseConnection.getConnection();
+            conn.setAutoCommit(false); // Inicia transacción atómica
+
+            PreparedStatement ps = conn.prepareStatement(queryPedido, Statement.RETURN_GENERATED_KEYS);
+            ps.setInt(1, p.getMesa().getIdMesa());
+            ps.setInt(2, p.getUsuario().getIdUsuario());
+            ps.setTimestamp(3, Timestamp.valueOf(p.getCreatedAt()));
+            ps.setBigDecimal(4, p.getTotal());
+            ps.setString(5, p.getEstado().toString());
+            ps.setString(6, p.getObservacion());
+            ps.executeUpdate();
+
+            // Obtener el ID autogenerado del pedido
+            ResultSet rs = ps.getGeneratedKeys();
+            int pedidoId = rs.next() ? rs.getInt(1) : -1;
+
+            // Insertar detalles en lote (batch processing)
+            PreparedStatement psDetalles = conn.prepareStatement(queryDetalles);
+            for (DetallePedido d : detalles) {
+                psDetalles.setInt(1, pedidoId);
+                psDetalles.setInt(2, d.getProducto().getIdProducto());
+                psDetalles.setInt(3, d.getCantidad());
+                psDetalles.setBigDecimal(4, d.getPrecioUnitario());
+                psDetalles.setBigDecimal(5, d.getSubtotal());
+                psDetalles.addBatch();
+            }
+            psDetalles.executeBatch();
+
+            conn.commit(); // Éxito: confirma cambios
+            return "Pedido y detalles insertados correctamente";
+
+        } catch (SQLException ex) {
+            try {
+                if (conn != null) conn.rollback(); // Falla: vuelve atrás
+            } catch (SQLException e) {
+                System.out.println("Rollback err: " + e);
+            }
+            return "Error al insertar pedido: " + ex.getMessage();
+        } finally {
+            closeConnection(conn);
+        }
+    }
+}`
+  },
+
+  // --- CAPA VISTA (VISTAS SWING & PANELES) ---
   asyncDataLoader: {
     name: 'AsyncDataLoader.java',
     path: 'GUI/src/vistas/util/AsyncDataLoader.java',
@@ -161,39 +344,155 @@ public class AsyncDataLoader {
     }
 }`
   },
-  mesaService: {
-    name: 'MesaService.java',
-    path: 'Backend/src/main/java/com/restaurant/backend/service/MesaService.java',
+  loginJava: {
+    name: 'Login.java',
+    path: 'GUI/src/vistas/Login.java',
     language: 'java',
-    desc: 'Lógica del servicio de mesas. Cierra automáticamente los pedidos activos cuando se libera una mesa, actualizando la base de datos.',
-    code: `package com.restaurant.backend.service;
+    desc: 'Lógica del formulario de autenticación. Utiliza AsyncDataLoader para despachar de forma asíncrona la verificación de credenciales.',
+    code: `package vistas;
 
-import com.restaurant.backend.model.EstadoMesa;
-import com.restaurant.backend.model.EstadoPedido;
-import com.restaurant.backend.model.Pedido;
+import com.restaurant.backend.model.Usuario;
+import com.restaurant.backend.service.ServicioFactory;
+import vistas.util.AsyncDataLoader;
 
-public class MesaService {
-    private final MesaDAO mesaDAO;
-    private final PedidoDAO pedidoDAO;
+public class Login extends javax.swing.JFrame {
+    // ... Constructor y componentes NetBeans ...
 
-    public String liberar(int mesaId) {
-        Mesa mesa = mesaDAO.getMesaPorId(mesaId);
-        if (mesa == null) {
-            return "No se encontro la mesa";
+    private void EntrarActionPerformed(java.awt.event.ActionEvent evt) {
+        String nombreUsuario = Usuarioimput.getText().trim();
+        String contrasena = String.valueOf(Password.getPassword());
+
+        if (nombreUsuario.isEmpty() || contrasena.isEmpty()) {
+            javax.swing.JOptionPane.showMessageDialog(this, "Por favor ingresá usuario y contraseña.");
+            return;
         }
 
-        // Cierra de manera arbitraria todos los pedidos abiertos vinculados
-        for (Pedido pedido : pedidoDAO.getPedidosPorMesa(mesaId)) {
-            if (pedido.getEstado() == EstadoPedido.ABIERTO || 
-                pedido.getEstado() == EstadoPedido.EN_COCINA || 
-                pedido.getEstado() == EstadoPedido.LISTO) {
+        Entrar.setEnabled(false);
+        Entrar.setText("Ingresando...");
+
+        // AsyncDataLoader ejecuta en segundo plano para no colgar el EDT de Swing
+        AsyncDataLoader.load(
+                this,
+                () -> ServicioFactory.getUsuarioService().iniciarSesion(nombreUsuario, contrasena),
+                usuarioAutenticado -> {
+                    Entrar.setEnabled(true);
+                    Entrar.setText("ENTRAR");
+
+                    if (usuarioAutenticado == null) {
+                        javax.swing.JOptionPane.showMessageDialog(this, "Usuario o contraseña incorrectos.");
+                        Password.setText("");
+                        return;
+                    }
+
+                    // Abrir menú principal con el objeto Usuario obtenido
+                    Menu menu = new Menu(usuarioAutenticado);
+                    menu.setVisible(true);
+                    this.dispose();
+                },
+                error -> {
+                    Entrar.setEnabled(true);
+                    Entrar.setText("ENTRAR");
+                    javax.swing.JOptionPane.showMessageDialog(this, "Error de conexión: " + error.getMessage());
+                }
+        );
+    }
+}`
+  },
+  menuJava: {
+    name: 'Menu.java',
+    path: 'GUI/src/vistas/Menu.java',
+    language: 'java',
+    desc: 'Contenedor principal y catálogo de productos del mozo. Realiza llamadas asíncronas para construir la grilla de productos dinámica.',
+    code: `package vistas;
+
+import com.restaurant.backend.model.Producto;
+import com.restaurant.backend.service.ServicioFactory;
+import vistas.paneles.CardProducto;
+import vistas.util.AsyncDataLoader;
+import java.awt.GridLayout;
+import java.util.List;
+
+public class Menu extends javax.swing.JFrame {
+    // ... Constructor e inicialización ...
+
+    private void cargarCategoriasYProductos() {
+        mostrarPlaceholderCarga();
+
+        // Consulta asíncrona a TiDB Cloud para obtener catálogo de productos activos
+        AsyncDataLoader.load(
+                this,
+                () -> {
+                    List<Producto> todos = ServicioFactory.getProductoService().obtenerTodos();
+                    return todos.stream().filter(Producto::isDisponible)
+                            .collect(java.util.stream.Collectors.toList());
+                },
+                productos -> {
+                    panelProductos.removeAll();
+                    panelProductos.setLayout(new GridLayout(0, 3, 10, 10));
+
+                    for (Producto prod : productos) {
+                        CardProducto card = new CardProducto();
+                        card.setProducto(prod.getNombre(), prod.getPrecio().doubleValue());
+                        card.setOnAgregarListener((nombre, precio) -> agregarProductoTabla(nombre, precio));
+                        panelProductos.add(card);
+                    }
+
+                    panelProductos.revalidate();
+                    panelProductos.repaint();
+                },
+                error -> {
+                    panelProductos.removeAll();
+                    panelProductos.add(new javax.swing.JLabel("Error al cargar catálogo."));
+                }
+        );
+    }
+}`
+  },
+  mesasPanelJava: {
+    name: 'MesasPanel.java',
+    path: 'GUI/src/vistas/paneles/MesasPanel.java',
+    language: 'java',
+    desc: 'Panel del salón con grid visual de 16 mesas. Colorea asíncronamente los botones de mesas según el estado de la BD.',
+    code: `package vistas.paneles;
+
+import vistas.util.AsyncDataLoader;
+import java.awt.Color;
+import java.util.List;
+
+public class MesasPanel extends javax.swing.JPanel {
+    // ... Constructor y componentes ...
+
+    private void actualizarMesasAsync() {
+        // Carga de estado de mesas en segundo plano
+        AsyncDataLoader.load(
+                this,
+                () -> com.restaurant.backend.service.ServicioFactory.getMesaService().listar(),
+                this::colorearBotonesMesas,
+                error -> System.err.println("Error: " + error.getMessage())
+        );
+    }
+
+    private void colorearBotonesMesas(List<com.restaurant.backend.model.Mesa> listaMesas) {
+        javax.swing.JButton[] botones = {
+            Mesa1, Mesa2, Mesa3, Mesa4, Mesa5, Mesa6, Mesa7, Mesa8,
+            Mesa9, Mesa10, Mesa11, Mesa12, Mesa13, Mesa14, Mesa15, Mesa16
+        };
+
+        for (com.restaurant.backend.model.Mesa m : listaMesas) {
+            int numero = m.getNumero();
+            if (numero >= 1 && numero <= 16) {
+                javax.swing.JButton btn = botones[numero - 1];
+                btn.setToolTipText("Capacidad: " + m.getCapacidad() + " - Estado: " + m.getEstado());
                 
-                pedidoDAO.ModificarEstado(pedido.getIdPedido(), EstadoPedido.CERRADO);
+                // Colorización en vivo según estado
+                switch (m.getEstado()) {
+                    case LIBRE -> btn.setBackground(new Color(51, 204, 0)); // Verde
+                    case OCUPADA -> btn.setBackground(new Color(255, 51, 51)); // Rojo
+                    case RESERVADA -> btn.setBackground(new Color(249, 155, 32)); // Naranja
+                    case FUERA_DE_SERVICIO -> btn.setBackground(new Color(100, 100, 100)); // Gris
+                }
             }
         }
-
-        // Cambia el estado de la mesa a libre
-        return mesaDAO.cambiarEstado(mesaId, EstadoMesa.LIBRE);
     }
 }`
   },
@@ -244,35 +543,46 @@ private void btnLiberarActionPerformed() {
     }
 }`
   },
-  depXml: {
-    name: 'dep.xml',
-    path: 'GUI/src/assembly/dep.xml',
-    language: 'xml',
-    desc: 'Descriptor de ensamble de Maven personalizado para desempaquetar y fusionar dependencias tradicionales (HikariCP, MySQL) y de sistema (AbsoluteLayout, LGoodDatePicker, jfreechart) en un Fat JAR.',
-    code: `<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.2.0"
-          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.2.0 http://maven.apache.org/xsd/assembly-2.2.0.xsd">
-    <id>jar-with-dependencies</id>
-    <formats>
-        <format>jar</format>
-    </formats>
-    <includeBaseDirectory>false</includeBaseDirectory>
-    <dependencySets>
-        <!-- 1. Desempaqueta dependencias runtime estándar de Maven -->
-        <dependencySet>
-            <outputDirectory>/</outputDirectory>
-            <useProjectArtifact>true</useProjectArtifact>
-            <unpack>true</unpack>
-            <scope>runtime</scope>
-        </dependencySet>
-        <!-- 2. Desempaqueta y mezcla los JARs locales asignados con alcance system -->
-        <dependencySet>
-            <outputDirectory>/</outputDirectory>
-            <unpack>true</unpack>
-            <scope>system</scope>
-        </dependencySet>
-    </dependencySets>
-</assembly>`
+  checkoutDialogJava: {
+    name: 'CheckoutDialog.java',
+    path: 'GUI/src/vistas/CheckoutDialog.java',
+    language: 'java',
+    desc: 'Diálogo modal de Checkout. Permite realizar descuentos en porcentaje (ej: 10%) o monto fijo y calcula totales en vivo.',
+    code: `package vistas;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+public class CheckoutDialog extends javax.swing.JDialog {
+    private double subtotalOriginal = 0.0;
+    private boolean confirmado = false;
+
+    // Recalcula el total neto aplicando el descuento digitado en el JTextField
+    private void recalcularTotalConDescuento() {
+        String descText = DescuentoVar.getText().trim();
+        double descuento = 0.0;
+        if (!descText.isEmpty()) {
+            try {
+                if (descText.endsWith("%")) {
+                    descText = descText.substring(0, descText.length() - 1).trim();
+                }
+                descuento = Double.parseDouble(descText);
+            } catch (NumberFormatException e) {
+                descuento = 0.0;
+            }
+        }
+        
+        double total = subtotalOriginal;
+        if (descuento > 0) {
+            if (descuento <= 100) {
+                total = subtotalOriginal * (1 - (descuento / 100.0)); // Descuento porcentual
+            } else {
+                total = Math.max(0.0, subtotalOriginal - descuento); // Descuento fijo
+            }
+        }
+        TotalNum.setText(String.format(java.util.Locale.US, "$%.2f", total));
+    }
+}`
   }
 };
 
@@ -771,7 +1081,7 @@ function App() {
               </div>
             </div>
 
-            {/* Metrics Grid (Inspired by HTML Report) */}
+            {/* Metrics Grid */}
             <div className="space-y-4">
               <h4 className="text-lg font-bold text-white flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-primary" style={{ backgroundColor: 'var(--primary)' }}></span>
@@ -980,17 +1290,52 @@ function App() {
                 <div className="bg-code-bg p-6 rounded-2xl border border-border space-y-4 animate-slide-up" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
                   <h4 className="text-lg font-bold text-white flex items-center gap-2">
                     <span className="w-3 h-3 rounded-full bg-primary" style={{ backgroundColor: 'var(--primary)' }}></span>
-                    🖼️ Capa Vista (GUI) — Swing Desktop
+                    🖼️ Capa Vista (GUI) — Swing Desktop (¡Haz clic en los archivos para inspeccionar su código!)
                   </h4>
                   <p className="text-secondary text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                     Formularios interactivos construidos con NetBeans GUI Builder. Responsable exclusivo de capturar la interacción del usuario y redibujar componentes. Para garantizar la fluidez de la aplicación bajo latencias de red, todas las llamadas a la base de datos se delegan asíncronamente en hilos de fondo mediante <code>AsyncDataLoader</code> y <code>SwingWorker</code>, previniendo congelamientos del EDT.
                   </p>
                   <div className="flex flex-wrap gap-2 pt-2">
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>Login.java</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>Menu.java</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>MesasPanel.java</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>DetallesMesasPanel.java</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>CheckoutDialog.java</span>
+                    <button
+                      onClick={() => { setActiveCodeFile('loginJava'); setActiveTab('ide'); }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                    >
+                      <FileCode className="w-3 h-3" />
+                      <span>Login.java</span>
+                    </button>
+                    <button
+                      onClick={() => { setActiveCodeFile('menuJava'); setActiveTab('ide'); }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                    >
+                      <FileCode className="w-3 h-3" />
+                      <span>Menu.java</span>
+                    </button>
+                    <button
+                      onClick={() => { setActiveCodeFile('mesasPanelJava'); setActiveTab('ide'); }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                    >
+                      <FileCode className="w-3 h-3" />
+                      <span>MesasPanel.java</span>
+                    </button>
+                    <button
+                      onClick={() => { setActiveCodeFile('detallesMesasPanel'); setActiveTab('ide'); }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                    >
+                      <FileCode className="w-3 h-3" />
+                      <span>DetallesMesasPanel.java</span>
+                    </button>
+                    <button
+                      onClick={() => { setActiveCodeFile('checkoutDialogJava'); setActiveTab('ide'); }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                    >
+                      <FileCode className="w-3 h-3" />
+                      <span>CheckoutDialog.java</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -1005,10 +1350,30 @@ function App() {
                     Actúa como orquestador del negocio. Los servicios validan estados de mesas, ejecutan el control de inventario y organizan las transacciones críticas. La instanciación de los servicios se centraliza en <code>ServicioFactory</code>, implementando el patrón Singleton mediante <em>Double-Checked Locking</em> para evitar problemas de concurrencia al llamarse desde múltiples hilos background.
                   </p>
                   <div className="flex flex-wrap gap-2 pt-2">
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>MesaService.java</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>PedidoService.java</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>ProductoService.java</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>ServicioFactory.java</span>
+                    <button
+                      onClick={() => { setActiveCodeFile('mesaService'); setActiveTab('ide'); }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                    >
+                      <FileCode className="w-3 h-3" />
+                      <span>MesaService.java</span>
+                    </button>
+                    <button
+                      onClick={() => { setActiveCodeFile('pedidoService'); setActiveTab('ide'); }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                    >
+                      <FileCode className="w-3 h-3" />
+                      <span>PedidoService.java</span>
+                    </button>
+                    <button
+                      onClick={() => { setActiveCodeFile('servicioFactory'); setActiveTab('ide'); }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                    >
+                      <FileCode className="w-3 h-3" />
+                      <span>ServicioFactory.java</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -1023,10 +1388,14 @@ function App() {
                     Abstrae y aísla por completo el acceso físico a los datos. Cada entidad expone una interfaz DAO (contrato de operaciones) y una implementación concreta basada en JDBC tradicional. Se utilizan sentencias SQL parametrizadas con <code>PreparedStatement</code> para evitar la inyección de SQL. Las operaciones de guardado de comandas son completamente transaccionales.
                   </p>
                   <div className="flex flex-wrap gap-2 pt-2">
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>MesaDAO.java</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>PedidoDAO.java</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>ProductoDAO.java</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>UsuarioDAO.java</span>
+                    <button
+                      onClick={() => { setActiveCodeFile('pedidoDAO'); setActiveTab('ide'); }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                    >
+                      <FileCode className="w-3 h-3" />
+                      <span>PedidoDAOImpl.java</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -1040,12 +1409,11 @@ function App() {
                   <p className="text-secondary text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                     POJOs (Plain Old Java Objects) limpios que representan las tablas relacionales en objetos orientados a objetos. No poseen lógica de negocio. Utilizan enums fuertemente tipados (<code>EstadoMesa</code>, <code>EstadoPedido</code>, <code>Rol</code>) para garantizar la seguridad de tipos y validaciones sintácticas en compilación.
                   </p>
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>Mesa.java</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>Pedido.java</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>Producto.java</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>Usuario.java</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>EstadoMesa.java</span>
+                  <div className="flex flex-wrap gap-2 pt-2 text-xs text-muted font-mono">
+                    <span>Mesa.java (POJO) · </span>
+                    <span>Pedido.java (POJO) · </span>
+                    <span>Producto.java (POJO) · </span>
+                    <span>Usuario.java (POJO)</span>
                   </div>
                 </div>
               )}
@@ -1060,10 +1428,22 @@ function App() {
                     Motor relacional MySQL hospedado remotamente en TiDB Cloud. La conexión física es administrada de forma centralizada por el pool HikariCP configurado a través de <code>ConexionDB.java</code>. El pool mantiene conexiones pre-establecidas activas para mitigar la sobrecarga de handshake SSL/TLS, reduciendo tiempos de consulta de ~500ms a &lt;5ms.
                   </p>
                   <div className="flex flex-wrap gap-2 pt-2">
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>ConexionDB.java</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>db.properties</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>schema.sql</span>
-                    <span className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>seed.sql</span>
+                    <button
+                      onClick={() => { setActiveCodeFile('conexionDB'); setActiveTab('ide'); }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                    >
+                      <FileCode className="w-3 h-3" />
+                      <span>ConexionDB.java</span>
+                    </button>
+                    <button
+                      onClick={() => { setActiveCodeFile('depXml'); setActiveTab('ide'); }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                    >
+                      <FileCode className="w-3 h-3" />
+                      <span>dep.xml (Assembly)</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -1124,7 +1504,7 @@ function App() {
           </div>
         )}
 
-        {/* 3. FLOW GALLERY TAB (NEW) */}
+        {/* 3. FLOW GALLERY TAB */}
         {activeTab === 'flujo' && (
           <div className="flow-layout animate-slide-up">
             {/* Left: stages vertical list */}
@@ -1298,6 +1678,22 @@ function App() {
                   <FileCode className="w-3.5 h-3.5" />
                   <span>MesaService.java</span>
                 </button>
+                <button 
+                  onClick={() => setActiveCodeFile('pedidoService')}
+                  className={`w-full text-left text-xs font-mono px-3 py-2 rounded-lg flex items-center gap-2 transition ${activeCodeFile === 'pedidoService' ? 'bg-primary-glow text-primary font-semibold' : 'text-secondary hover:bg-card-hover'}`}
+                  style={activeCodeFile === 'pedidoService' ? { color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : {}}
+                >
+                  <FileCode className="w-3.5 h-3.5" />
+                  <span>PedidoService.java</span>
+                </button>
+                <button 
+                  onClick={() => setActiveCodeFile('pedidoDAO')}
+                  className={`w-full text-left text-xs font-mono px-3 py-2 rounded-lg flex items-center gap-2 transition ${activeCodeFile === 'pedidoDAO' ? 'bg-primary-glow text-primary font-semibold' : 'text-secondary hover:bg-card-hover'}`}
+                  style={activeCodeFile === 'pedidoDAO' ? { color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : {}}
+                >
+                  <FileCode className="w-3.5 h-3.5" />
+                  <span>PedidoDAOImpl.java</span>
+                </button>
               </div>
 
               <div className="space-y-1 pt-4">
@@ -1311,12 +1707,44 @@ function App() {
                   <span>AsyncDataLoader.java</span>
                 </button>
                 <button 
+                  onClick={() => setActiveCodeFile('loginJava')}
+                  className={`w-full text-left text-xs font-mono px-3 py-2 rounded-lg flex items-center gap-2 transition ${activeCodeFile === 'loginJava' ? 'bg-primary-glow text-primary font-semibold' : 'text-secondary hover:bg-card-hover'}`}
+                  style={activeCodeFile === 'loginJava' ? { color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : {}}
+                >
+                  <FileCode className="w-3.5 h-3.5" />
+                  <span>Login.java</span>
+                </button>
+                <button 
+                  onClick={() => setActiveCodeFile('menuJava')}
+                  className={`w-full text-left text-xs font-mono px-3 py-2 rounded-lg flex items-center gap-2 transition ${activeCodeFile === 'menuJava' ? 'bg-primary-glow text-primary font-semibold' : 'text-secondary hover:bg-card-hover'}`}
+                  style={activeCodeFile === 'menuJava' ? { color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : {}}
+                >
+                  <FileCode className="w-3.5 h-3.5" />
+                  <span>Menu.java</span>
+                </button>
+                <button 
+                  onClick={() => setActiveCodeFile('mesasPanelJava')}
+                  className={`w-full text-left text-xs font-mono px-3 py-2 rounded-lg flex items-center gap-2 transition ${activeCodeFile === 'mesasPanelJava' ? 'bg-primary-glow text-primary font-semibold' : 'text-secondary hover:bg-card-hover'}`}
+                  style={activeCodeFile === 'mesasPanelJava' ? { color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : {}}
+                >
+                  <FileCode className="w-3.5 h-3.5" />
+                  <span>MesasPanel.java</span>
+                </button>
+                <button 
                   onClick={() => setActiveCodeFile('detallesMesasPanel')}
                   className={`w-full text-left text-xs font-mono px-3 py-2 rounded-lg flex items-center gap-2 transition ${activeCodeFile === 'detallesMesasPanel' ? 'bg-primary-glow text-primary font-semibold' : 'text-secondary hover:bg-card-hover'}`}
                   style={activeCodeFile === 'detallesMesasPanel' ? { color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : {}}
                 >
                   <FileCode className="w-3.5 h-3.5" />
                   <span>DetallesMesasPanel.java</span>
+                </button>
+                <button 
+                  onClick={() => setActiveCodeFile('checkoutDialogJava')}
+                  className={`w-full text-left text-xs font-mono px-3 py-2 rounded-lg flex items-center gap-2 transition ${activeCodeFile === 'checkoutDialogJava' ? 'bg-primary-glow text-primary font-semibold' : 'text-secondary hover:bg-card-hover'}`}
+                  style={activeCodeFile === 'checkoutDialogJava' ? { color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : {}}
+                >
+                  <FileCode className="w-3.5 h-3.5" />
+                  <span>CheckoutDialog.java</span>
                 </button>
               </div>
 
