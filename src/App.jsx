@@ -2847,14 +2847,14 @@ public boolean desactivar(int idProducto) throws SQLException {
                   className={`px-4 py-2.5 rounded-xl font-semibold text-sm transition ${simFlow === 'pedido' ? 'bg-primary text-black' : 'border border-border text-secondary hover:bg-card-hover'}`}
                   style={simFlow === 'pedido' ? { backgroundColor: 'var(--primary)', color: '#000' } : { borderColor: 'var(--border)' }}
                 >
-                  Flujo de Comandas (Pedido)
+                  Flujo de Comandas
                 </button>
                 <button 
                   onClick={() => resetSimulator('liberar')}
                   className={`px-4 py-2.5 rounded-xl font-semibold text-sm transition ${simFlow === 'liberar' ? 'bg-primary text-black' : 'border border-border text-secondary hover:bg-card-hover'}`}
                   style={simFlow === 'liberar' ? { backgroundColor: 'var(--primary)', color: '#000' } : { borderColor: 'var(--border)' }}
                 >
-                  Liberar Mesa (Hotfix)
+                  Liberar Mesa
                 </button>
                 <button 
                   onClick={() => resetSimulator('abm')}
