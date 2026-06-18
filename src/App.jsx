@@ -1860,6 +1860,7 @@ public boolean desactivar(int idProducto) throws SQLException {
                   <Database className="w-4 h-4" />
                   <span>Persistencia</span>
                 </button>
+                <br />
               </div>
 
               {/* Dynamic Layer Info Box */}
