@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { generarInforme } from './generarInforme.js';
 import { 
   BookOpen, 
@@ -1509,7 +1509,7 @@ public boolean desactivar(int idProducto) throws SQLException {
         </div>
 
         {/* Navigation Tabs */}
-        <nav className="flex-1 px-4 py-6 space-y-1">
+        <nav className="flex-1 flex flex-col px-4 py-6 space-y-1">
           <button 
             onClick={() => setActiveTab('inicio')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-medium transition-all duration-200 ${activeTab === 'inicio' ? 'bg-primary text-black font-semibold' : 'text-secondary hover:bg-card-hover hover:text-white'}`}
@@ -1560,39 +1560,33 @@ public boolean desactivar(int idProducto) throws SQLException {
           </button>
 
           <button 
-            onClick={() => setActiveTab('consola')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-medium transition-all duration-200 ${activeTab === 'consola' ? 'bg-primary text-black font-semibold' : 'text-secondary hover:bg-card-hover hover:text-white'}`}
-            style={activeTab === 'consola' ? { backgroundColor: 'var(--primary)', color: '#000' } : {}}
+            onClick={generarInforme}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-bold transition-all duration-300 text-white mt-auto hover:scale-[1.02] active:scale-[0.98]"
+            style={{
+              background: 'linear-gradient(135deg, #f99b20 0%, #d85f0b 100%)',
+              boxShadow: '0 4px 14px rgba(249, 155, 32, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2)',
+              border: '1px solid rgba(249, 155, 32, 0.3)',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.boxShadow = '0 6px 18px rgba(249, 155, 32, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.3)';
+              e.currentTarget.style.filter = 'brightness(1.08)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.boxShadow = '0 4px 14px rgba(249, 155, 32, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2)';
+              e.currentTarget.style.filter = 'brightness(1)';
+            }}
           >
-            <TerminalIcon className="w-5 h-5" />
-            <span>Consola de Construcción</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span>Descargar Informe</span>
           </button>
         </nav>
 
         {/* Footer info */}
         <div className="p-6 border-t border-border space-y-3" style={{ borderColor: 'var(--border)' }}>
-          {/* Download PDF button */}
-          <button
-            id="btn-descargar-informe"
-            onClick={generarInforme}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold text-sm transition-all duration-200"
-            style={{
-              background: 'linear-gradient(135deg, #f99b20 0%, #e07010 100%)',
-              color: '#fff',
-              boxShadow: '0 4px 18px rgba(249,155,32,0.35)',
-              letterSpacing: '0.02em',
-            }}
-            onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.1)'}
-            onMouseLeave={e => e.currentTarget.style.filter = 'brightness(1)'}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-            Descargar Informe PDF
-          </button>
-
           <div className="bg-card p-4 rounded-xl border border-border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
             <span className="inline-block text-[10px] uppercase font-bold tracking-wider text-primary bg-primary-glow px-2 py-0.5 rounded mb-1" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' }}>
               Hotfix Aplicado
@@ -1614,7 +1608,6 @@ public boolean desactivar(int idProducto) throws SQLException {
               {activeTab === 'flujo' && 'Recorrido y Flujo de Pantallas'}
               {activeTab === 'ide' && 'Explorador de Código Interactivo'}
               {activeTab === 'simulador' && 'Simulador Visual de Eventos'}
-              {activeTab === 'consola' && 'Consola y Ciclo de Compilación de Maven'}
             </h2>
             <p className="text-secondary mt-1" style={{ color: 'var(--text-secondary)' }}>
               {activeTab === 'inicio' && 'Proyecto final de Programación II estructurado en Java Desktop Multi-capas.'}
@@ -1622,12 +1615,7 @@ public boolean desactivar(int idProducto) throws SQLException {
               {activeTab === 'flujo' && 'Visualiza el ciclo de vida y los flujos del sistema con capturas y detalles técnicos.'}
               {activeTab === 'ide' && 'Inspecciona las clases de persistencia, concurrencia y los arreglos de código.'}
               {activeTab === 'simulador' && 'Simulación paso a paso del Event Dispatch Thread, SwingWorkers y llamadas SQL.'}
-              {activeTab === 'consola' && 'Simula la ejecución de comandos Maven y el empaquetado del distribuidor final.'}
             </p>
-          </div>
-          <div className="flex items-center gap-2 text-xs bg-card px-3 py-1.5 rounded-lg border border-border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-            <span className="w-2 h-2 rounded-full bg-success animate-pulse" style={{ backgroundColor: 'var(--success)' }}></span>
-            <span className="text-muted font-mono" style={{ color: 'var(--text-muted)' }}>Vite + React</span>
           </div>
         </header>
 
@@ -3025,80 +3013,6 @@ public boolean desactivar(int idProducto) throws SQLException {
                   </button>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* 6. MAVEN / CONSOLE TAB */}
-        {activeTab === 'consola' && (
-          <div className="space-y-6 animate-slide-up">
-            {/* Terminal Actions */}
-            <div className="bg-card border border-border p-6 rounded-2xl flex gap-4" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-              <button 
-                onClick={() => runConsoleCommand('clean')}
-                disabled={isConsoleBuilding}
-                className="bg-card border border-border text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-card-hover transition disabled:opacity-40"
-                style={{ borderColor: 'var(--border)' }}
-              >
-                <Play className="w-3.5 h-3.5 text-primary" style={{ color: 'var(--primary)' }} />
-                <span>mvn clean</span>
-              </button>
-
-              <button 
-                onClick={() => runConsoleCommand('package')}
-                disabled={isConsoleBuilding}
-                className="bg-primary hover:bg-primary-hover text-black px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition disabled:opacity-40"
-                style={{ backgroundColor: 'var(--primary)', color: '#000' }}
-              >
-                <Play className="w-3.5 h-3.5" />
-                <span>mvn clean package (Compilar JAR Único)</span>
-              </button>
-
-              <button 
-                onClick={() => runConsoleCommand('run')}
-                disabled={isConsoleBuilding}
-                className="bg-card border border-border text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-card-hover transition disabled:opacity-40"
-                style={{ borderColor: 'var(--border)' }}
-              >
-                <Play className="w-3.5 h-3.5 text-success" style={{ color: 'var(--success)' }} />
-                <span>java -jar RestoManager.jar (Ejecutar)</span>
-              </button>
-            </div>
-
-            {/* Virtual Console */}
-            <div className="bg-code-bg border border-border rounded-2xl p-6 min-h-[400px] max-h-[500px] overflow-y-auto font-mono text-xs flex flex-col space-y-2 shadow-2xl" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
-              <div className="flex items-center gap-2 border-b border-border pb-3 mb-3 text-muted text-[10px]" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                <TerminalIcon className="w-3.5 h-3.5 text-primary" style={{ color: 'var(--primary)' }} />
-                <span>TERMINAL DE COMPILACIÓN — SIMULADOR INTERACTIVO</span>
-              </div>
-
-              {consoleLogs.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center text-muted" style={{ color: 'var(--text-muted)' }}>
-                  <p className="cursor-blink font-mono">Selecciona uno de los comandos superiores para inicializar la consola...</p>
-                </div>
-              ) : (
-                <div className="flex-1 space-y-1.5 font-mono text-[#d1c7bd]" style={{ color: '#d1c7bd' }}>
-                  {consoleLogs.map((log, idx) => {
-                    let colorClass = 'text-secondary';
-                    if (log.startsWith('[INFO]')) colorClass = 'text-blue-400';
-                    if (log.startsWith('[WARNING]')) colorClass = 'text-yellow-500';
-                    if (log.startsWith('PS C:')) colorClass = 'text-primary font-bold';
-                    if (log.toLowerCase().includes('success')) colorClass = 'text-success font-bold';
-                    if (log.toLowerCase().includes('failure') || log.toLowerCase().includes('error')) colorClass = 'text-red-500 font-bold';
-
-                    return (
-                      <p key={idx} className={`font-mono leading-normal whitespace-pre-wrap ${colorClass}`}>
-                        {log}
-                      </p>
-                    );
-                  })}
-                  
-                  {isConsoleBuilding && (
-                    <p className="cursor-blink font-mono text-primary" style={{ color: 'var(--primary)' }}></p>
-                  )}
-                  <div id="console-scroll-target"></div>
-                </div>
-              )}
             </div>
           </div>
         )}
