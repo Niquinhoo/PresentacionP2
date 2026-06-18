@@ -43,7 +43,14 @@ export async function generarInforme() {
   const drw  = (c) => doc.setDrawColor(...c);
   const tc   = (c) => doc.setTextColor(...c);
   const fnt  = (s, sz) => { doc.setFont('helvetica', s); doc.setFontSize(sz); };
+  const mono = (s, sz) => { doc.setFont('courier', s); doc.setFontSize(sz); };
   const lw   = (w) => doc.setLineWidth(w);
+
+  const pairImg = () => {
+    const gap = 4;
+    const w = (CW - gap) / 2;
+    return { gap, w, left: ML, right: ML + w + gap };
+  };
 
   const wrap = (text, x, sy, mw, lh = 5) => {
     const ls = doc.splitTextToSize(text, mw);
@@ -89,7 +96,7 @@ export async function generarInforme() {
   const need = (h) => { if (y + h > H - 18) newPage(); };
 
   // ─── Sección header bar (renovado) ────────────────────────────────────────
-  const section = (title, icon = '▸') => {
+  const section = (title, icon = '>') => {
     need(22);
     // Sombra simulada
     rgb([200, 210, 225]); doc.rect(ML + 0.8, y + 0.8, CW, 13, 'F');
@@ -128,10 +135,56 @@ export async function generarInforme() {
     y += 3.5;
   };
 
+  const tokenizeJava = (line) => {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith('*') || trimmed.startsWith('|') || trimmed.startsWith('`')) {
+      return [{ text: line, type: 'comment' }];
+    }
+
+    const tokens = [];
+    let lastIndex = 0;
+    const regex = /(\/\/.*|<-.*|\/\*.*)|("[^"\\]*(?:\\.[^"\\]*)*")|(@\w+)|(\b(?:public|private|protected|class|interface|enum|return|new|try|catch|finally|for|while|if|else|switch|case|default|synchronized|volatile|static|final|void|import|package)\b)|(\b(?:String|int|boolean|double|float|char|long|short|byte|BigDecimal|Connection|PreparedStatement|ResultSet|SQLException|MesaService|MesaDAOImpl|PedidoDAOImpl|Callable|Consumer|Throwable|SwingWorker|Component|List|Integer|Mesa|Pedido|Producto|Usuario|DatabaseConnection|ServicioFactory|AsyncDataLoader|ProductosPanel|MesasPanel|ProductoService|ProductoDAO|ProductoDAOImpl|MesaDAO|UsuarioDAO|UsuarioDAOImpl|UsuarioService|OnAgregarListener|CardProducto)\b)/g;
+
+    let match;
+    while ((match = regex.exec(line)) !== null) {
+      const matchIndex = match.index;
+      const matchText = match[0];
+
+      if (matchIndex > lastIndex) {
+        tokens.push({ text: line.substring(lastIndex, matchIndex), type: 'default' });
+      }
+
+      let type = 'default';
+      if (match[1]) type = 'comment';
+      else if (match[2]) type = 'string';
+      else if (match[3]) type = 'annotation';
+      else if (match[4]) type = 'keyword';
+      else if (match[5]) type = 'type';
+
+      tokens.push({ text: matchText, type });
+      lastIndex = regex.lastIndex;
+    }
+
+    if (lastIndex < line.length) {
+      tokens.push({ text: line.substring(lastIndex), type: 'default' });
+    }
+
+    return tokens;
+  };
+
   // ─── Bloque de código mejorado ────────────────────────────────────────────
   const code = (lines, label = 'Java') => {
-    const lh   = 4;
-    const bh   = lines.length * lh + 18;
+    const lh      = 4.8;
+    const numColW = 9;
+    const codeX   = ML + numColW + 2;
+    const codeW   = CW - numColW - 4;
+    
+    mono('normal', 6.5);
+    const charW = doc.getTextWidth('A'); // Medida exacta de ancho de fuente monoespaciada
+    
+    const rendered = lines.map(ln => doc.splitTextToSize(ln, codeW));
+    const totalLines = rendered.reduce((n, parts) => n + parts.length, 0);
+    const bh = totalLines * lh + 18;
     need(bh + 6);
 
     // Sombra
@@ -142,7 +195,7 @@ export async function generarInforme() {
     // Header strip del bloque
     rgb([10, 15, 32]); doc.rect(ML, y, CW, 9, 'F');
     doc.roundedRect(ML, y, CW, 9, 3, 3, 'F');
-    doc.rect(ML, y + 4, CW, 5, 'F'); // recorte inferior del roundedRect
+    doc.rect(ML, y + 4, CW, 5, 'F');
 
     // Traffic lights
     const tlColors = [ErrR, WarnY, SuccG];
@@ -150,31 +203,51 @@ export async function generarInforme() {
       rgb(c); doc.circle(ML + 6 + i * 5.5, y + 4.5, 1.6, 'F');
     });
 
-    // Label del lenguaje
-    fnt('bold', 5.8); tc(OrangeL);
+    // Label del lenguaje con prevención de desbordamiento (auto-scale)
+    let labelSz = 5.8;
+    mono('bold', labelSz);
+    let labelW = doc.getTextWidth(label.toUpperCase());
+    const maxLabelW = CW - 30;
+    if (labelW > maxLabelW) {
+      labelSz = labelSz * (maxLabelW / labelW);
+      mono('bold', labelSz);
+    }
+    tc(OrangeL);
     doc.text(label.toUpperCase(), ML + 25, y + 6.2);
 
     // Línea separadora header/body
     rgb([40, 55, 90]); doc.rect(ML, y + 9, CW, 0.4, 'F');
+    // Columna de números de línea
+    rgb([16, 22, 40]); doc.rect(ML, y + 9, numColW, bh - 9, 'F');
+    rgb([35, 48, 78]); doc.rect(ML + numColW, y + 9, 0.4, bh - 9, 'F');
 
-    // Líneas de código con números de línea
-    lines.forEach((ln, i) => {
-      const lineY = y + 14.5 + i * lh;
-      // Número de línea
-      fnt('normal', 4.5); tc(CodeCmt);
-      doc.text(String(i + 1).padStart(2, ' '), ML + 2.5, lineY);
-      // Separador de número de línea
-      rgb([35, 48, 78]); doc.rect(ML + 7.5, lineY - 3, 0.3, 4, 'F');
-      // Coloreo básico por tipo de línea
-      fnt('normal', 5.8);
-      if (ln.trimStart().startsWith('//') || ln.trimStart().startsWith('*')) {
-        tc(CodeCmt);
-      } else if (ln.includes('"') || ln.includes("'")) {
-        tc(CodeFg); // texto normal, coloreo de strings es complejo sin parser
-      } else {
-        tc(CodeFg);
-      }
-      doc.text(ln, ML + 10, lineY);
+    // Líneas de código con números de línea y coloreado de sintaxis
+    let visualLine = 0;
+    rendered.forEach((parts, i) => {
+      parts.forEach((part, j) => {
+        const lineY = y + 14.5 + visualLine * lh;
+        if (j === 0) {
+          mono('normal', 5.8); tc(CodeCmt);
+          doc.text(String(i + 1).padStart(2, ' '), ML + 1.5, lineY);
+        }
+        
+        let colIdx = 0;
+        const tokens = tokenizeJava(part);
+        tokens.forEach(tok => {
+          mono('normal', 6.5);
+          if (tok.type === 'comment') tc(CodeCmt);
+          else if (tok.type === 'string') tc(CodeStr);
+          else if (tok.type === 'annotation') tc(CodeKw);
+          else if (tok.type === 'keyword') tc(CodeKw);
+          else if (tok.type === 'type') tc(Teal);
+          else tc(CodeFg);
+
+          doc.text(tok.text, codeX + colIdx * charW, lineY);
+          colIdx += tok.text.length;
+        });
+        
+        visualLine++;
+      });
     });
 
     y += bh + 6;
@@ -232,7 +305,8 @@ export async function generarInforme() {
     let fy = y + 15;
 
     // Label Problema
-    rgb(ErrR); doc.roundedRect(ML + 8, fy - 3.5, 20, 5, 1, 1, 'F');
+    const lblW = 24;
+    rgb(ErrR); doc.roundedRect(ML + 8, fy - 3.5, lblW, 5, 1, 1, 'F');
     fnt('bold', 5.8); tc(White); doc.text('PROBLEMA', ML + 9, fy);
     fy += 4;
     fnt('normal', 7); tc(Mid);
@@ -240,15 +314,15 @@ export async function generarInforme() {
     fy += 1;
 
     // Label Solución
-    rgb(SuccG); doc.roundedRect(ML + 8, fy - 3.5, 20, 5, 1, 1, 'F');
-    fnt('bold', 5.8); tc(White); doc.text('SOLUCIÓN', ML + 9, fy);
+    rgb(SuccG); doc.roundedRect(ML + 8, fy - 3.5, lblW, 5, 1, 1, 'F');
+    fnt('bold', 5.8); tc(White); doc.text('SOLUCION', ML + 9, fy);
     fy += 4;
     fnt('normal', 7); tc(Mid);
     sLines.forEach(l => { doc.text(l, ML + 10, fy); fy += 4.2; });
 
     if (rLines.length > 0) {
       fy += 1;
-      rgb(BlueA); doc.roundedRect(ML + 8, fy - 3.5, 21, 5, 1, 1, 'F');
+      rgb(BlueA); doc.roundedRect(ML + 8, fy - 3.5, lblW, 5, 1, 1, 'F');
       fnt('bold', 5.8); tc(White); doc.text('RESULTADO', ML + 9, fy);
       fy += 4;
       fnt('bold', 7); tc(NavyMid);
@@ -389,20 +463,30 @@ export async function generarInforme() {
     { n: 'GonzaloBarroso',  r: 'Backend · ProductoDAO',          c: [120, 50, 190] },
   ];
   let bx = ML + 9;
-  team.forEach(m => {
-    if (bx > W - 60) { bx = ML + 9; descLineY += 6.5; }
-    bx = badge(`${m.n}  ·  ${m.r}`, bx, descLineY, m.c);
+  const badgeColW = (CW - 14) / 2;
+  team.forEach((m, i) => {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    bx = ML + 9 + col * badgeColW;
+    const by = descLineY + row * 7;
+    badge(`${m.n}  |  ${m.r}`, bx, by, m.c);
   });
+  descLineY += Math.ceil(team.length / 2) * 7;
 
   // Stack tecnológico
-  descLineY += 7;
-  fnt('bold', 7); tc(Dark); doc.text('Stack tecnológico:', ML + 9, descLineY); descLineY += 5.5;
-  const stack = ['Java 17', 'Swing', 'Maven Multi-módulo', 'HikariCP', 'MySQL / TiDB', 'JUnit 5', 'JFreeChart', 'SwingWorker'];
-  bx = ML + 9;
-  stack.forEach(s => {
-    if (bx > W - 30) { bx = ML + 9; descLineY += 6.5; }
-    bx = badge(s, bx, descLineY, NavyMid, OrangeL);
-  });
+  // descLineY += 7;
+  // fnt('bold', 7); tc(Dark); doc.text('Stack tecnológico:', ML + 9, descLineY); descLineY += 5.5;
+  // const stack = ['Java 17', 'Swing', 'Maven Multi-módulo', 'HikariCP', 'MySQL / TiDB', 'JUnit 5', 'JFreeChart', 'SwingWorker'];
+  // bx = ML + 9;
+  // stack.forEach((s, i) => {
+  //   const col = i % 3;
+  //   const row = Math.floor(i / 3);
+  //   bx = ML + 9 + col * 56;
+  //   const by = descLineY + row * 7;
+  //   badge(s, bx, by, NavyMid, OrangeL);
+  // });
+  // descLineY += Math.ceil(stack.length / 3) * 7;
+
 
   // ── Índice de contenidos ──────────────────────────────────────────────────
   const tocY = descY + 63;
@@ -425,14 +509,27 @@ export async function generarInforme() {
   fnt('normal', 7); tc(Mid);
   toc.forEach(([num, title, pg], i) => {
     const ty = tocY + 14 + i * 5;
+    const titleX = ML + 14;
+    const pageX = ML + CW - 5;
     // Número
     rgb(Orange); doc.roundedRect(ML + 5, ty - 3.5, 5, 5, 1, 1, 'F');
     fnt('bold', 6); tc(White); doc.text(num, ML + 7.5, ty, { align: 'center' });
     // Título
-    fnt('normal', 7); tc(Dark); doc.text(title, ML + 14, ty);
-    // Puntos y página
-    tc(Muted); doc.text('· · · · · · · · · · · · · · · · · · · · · · · · ·', ML + 14 + doc.getTextWidth(title) + 2, ty);
-    fnt('bold', 7); tc(Orange); doc.text(pg, ML + CW - 5, ty, { align: 'right' });
+    fnt('normal', 7); tc(Dark); doc.text(title, titleX, ty);
+    // Puntos dinámicos hasta el número de página
+    fnt('bold', 7); tc(Orange);
+    const pgW = doc.getTextWidth(pg);
+    doc.text(pg, pageX, ty, { align: 'right' });
+    fnt('normal', 7); tc(Muted);
+    const titleW = doc.getTextWidth(title);
+    const dotsStart = titleX + titleW + 3;
+    const dotsEnd = pageX - pgW - 4;
+    let dotX = dotsStart;
+    const dotStep = doc.getTextWidth('.');
+    while (dotX + dotStep < dotsEnd) {
+      doc.text('.', dotX, ty);
+      dotX += dotStep;
+    }
   });
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -447,20 +544,20 @@ export async function generarInforme() {
 
   code([
     'Programacion2-Final/',
-    '  ├── pom.xml                    ← Parent POM — orquesta Backend y GUI',
-    '  ├── Backend/',
-    '  │   └── src/main/java/com/restaurant/backend/',
-    '  │       ├── model/             ← POJOs: Mesa, Pedido, Producto, Usuario…',
-    '  │       ├── dao/               ← Interfaces + Impl JDBC',
-    '  │       ├── service/           ← Lógica de negocio',
-    '  │       ├── controller/        ← Stubs puente GUI↔Backend',
-    '  │       └── util/              ← ConexionDB (HikariCP Singleton + DCL)',
-    '  ├── GUI/',
-    '  │   ├── pom.xml                ← POM hijo — hereda parent, fat JAR',
-    '  │   ├── lib/                   ← JARs locales (AbsoluteLayout, JFreeChart)',
-    '  │   ├── src/assembly/dep.xml   ← Descriptor Fat JAR personalizado',
-    '  │   └── src/vistas/            ← Login, Menu, paneles, diálogos Swing',
-    '  └── Documentacion/             ← Fix#1, Hotfix, Reporte_Jar, plan_service…',
+    '|-- pom.xml                    <- Parent POM - orquesta Backend y GUI',
+    '|-- Backend/',
+    '|   |-- src/main/java/com/restaurant/backend/',
+    '|   |   |-- model/             <- POJOs: Mesa, Pedido, Producto, Usuario',
+    '|   |   |-- dao/               <- Interfaces + Impl JDBC',
+    '|   |   |-- service/           <- Logica de negocio',
+    '|   |   |-- controller/        <- Stubs puente GUI <-> Backend',
+    '|   |   `-- util/              <- ConexionDB (HikariCP Singleton + DCL)',
+    '|-- GUI/',
+    '|   |-- pom.xml                <- POM hijo - hereda parent, fat JAR',
+    '|   |-- lib/                   <- JARs locales (AbsoluteLayout, JFreeChart)',
+    '|   |-- src/assembly/dep.xml   <- Descriptor Fat JAR personalizado',
+    '|   `-- src/vistas/            <- Login, Menu, paneles, dialogos Swing',
+    '`-- Documentacion/             <- Fix#1, Hotfix, Reporte_Jar, plan_service',
   ], 'Estructura de directorios');
 
   sub('1.2  Estrategia de ramas — GitFlow simplificado');
@@ -485,23 +582,31 @@ export async function generarInforme() {
     y += 4;
   });
 
+  // Asegurar espacio suficiente para el título y la secuencia de pasos, evitando cortes feos
+  need(95);
   sub('1.3  Flujo de Pull Request paso a paso');
   const prs = [
-    ['①', 'Crear rama desde dev',    'git checkout -b feature/mi-tarea  — siempre desde dev actualizado.'],
-    ['②', 'Desarrollar y commitear', 'Commits atómicos con mensajes descriptivos. Sin mezclar features.'],
-    ['③', 'Abrir PR en GitHub',      'PR apuntando a dev, con descripción, screenshots y link a tarea de Notion.'],
-    ['④', 'Code Review',             'Al menos un integrante revisa el código y solicita cambios si hay problemas.'],
-    ['⑤', 'Merge Squash a dev',     'Al aprobar, squash para historial limpio. La feature branch se elimina.'],
-    ['⑥', 'Release a main',         'Periódicamente dev → main mediante PR de release con tag de versión semántica.'],
+    ['1', 'Crear rama desde dev',    'git checkout -b feature/mi-tarea  - siempre desde dev actualizado.'],
+    ['2', 'Desarrollar y commitear', 'Commits atomicos con mensajes descriptivos. Sin mezclar features.'],
+    ['3', 'Abrir PR en GitHub',      'PR apuntando a dev, con descripcion, screenshots y link a tarea de Notion.'],
+    ['4', 'Code Review',             'Al menos un integrante revisa el codigo y solicita cambios si hay problemas.'],
+    ['5', 'Merge Squash a dev',      'Al aprobar, squash para historial limpio. La feature branch se elimina.'],
+    ['6', 'Release a main',          'Periodicamente dev -> main mediante PR de release con tag de version semantica.'],
   ];
-  prs.forEach(([num, t, d]) => {
-    need(16);
-    // Círculo paso
+  prs.forEach(([num, t, d], idx) => {
+    const descLines = doc.splitTextToSize(d, CW - 16);
+    const stepH = 10 + descLines.length * 4.2;
+    need(stepH);
+    // Dibujar línea conectora detrás del círculo si no es el último paso
+    if (idx < prs.length - 1) {
+      rgb(GrayL); lw(0.5); doc.line(ML + 5, y + 3, ML + 5, y + stepH + 3);
+    }
+    // Círculo indicador
     rgb(Orange); doc.circle(ML + 5, y + 3, 4.5, 'F');
     fnt('bold', 8); tc(White); doc.text(num, ML + 5, y + 5, { align: 'center' });
-    // Línea conectora (excepto el último)
-    rgb(GrayL); lw(0.5); doc.line(ML + 5, y + 7.5, ML + 5, y + 16);
+    // Título del paso
     fnt('bold', 8); tc(Dark); doc.text(t, ML + 14, y + 3);
+    // Descripción
     fnt('normal', 7.5); tc(Mid);
     y = wrap(d, ML + 14, y + 8, CW - 16, 4.2);
     y += 2;
@@ -514,7 +619,7 @@ export async function generarInforme() {
 
   section('Sección 2  ·  Arquitectura en Capas — Código Representativo');
 
-  sub('① Capa Modelo  ·  com.restaurant.backend.model');
+  sub('1) Capa Modelo  |  com.restaurant.backend.model');
   para('POJOs sin lógica de negocio. Encapsulación total con getters/setters. Enums tipados. BigDecimal para precisión monetaria. Constructores sobrecargados.');
   code([
     'public class Producto {',
@@ -531,7 +636,7 @@ export async function generarInforme() {
     'public enum EstadoMesa { LIBRE, OCUPADA, RESERVADA, FUERA_DE_SERVICIO }',
   ], 'Producto.java + EstadoMesa.java');
 
-  sub('② Capa DAO  ·  com.restaurant.backend.dao');
+  sub('2) Capa DAO  |  com.restaurant.backend.dao');
   para('Interfaz (contrato) + implementación JDBC. PreparedStatement previene SQL Injection. try-with-resources libera la conexión automáticamente.');
   code([
     'public interface ProductoDAO {',
@@ -554,7 +659,7 @@ export async function generarInforme() {
     '}',
   ], 'ProductoDAOImpl.java');
 
-  sub('③ Capa Servicio  ·  ServicioFactory (Factory + Singleton)');
+  sub('3) Capa Servicio  |  ServicioFactory (Factory + Singleton)');
   code([
     'public final class ServicioFactory {',
     '    private static volatile MesaService mesaService; // volatile → multi-hilo',
@@ -579,7 +684,7 @@ export async function generarInforme() {
     '};',
   ], 'ServicioFactory.java + State Machine');
 
-  sub('④ Capa Vista — AsyncDataLoader (SwingWorker genérico)');
+  sub('4) Capa Vista - AsyncDataLoader (SwingWorker generico)');
   para('Wrapper genérico sobre SwingWorker. Garantiza que el Event Dispatch Thread (EDT) nunca se bloquee durante consultas SQL a TiDB Cloud.');
   code([
     'public static <T> void load(Component parent, Callable<T> task,',
@@ -621,26 +726,31 @@ export async function generarInforme() {
 
   // Helper entidad ER
   const ent = (label, attrs, ex, ey, ew, col) => {
-    const eh = 7 + attrs.length * 4.3;
+    const headerH = 8;
+    const rowH = 5;
+    const bottomPadding = 3;
+    const eh = headerH + attrs.length * rowH + bottomPadding;
+    
     // Header entidad
-    rgb(col); doc.roundedRect(ex, ey, ew, 7.5, 1.5, 1.5, 'F');
-    doc.rect(ex, ey + 3, ew, 4.5, 'F');
-    fnt('bold', 5.5); tc(White);
-    doc.text(label, ex + ew / 2, ey + 5.2, { align: 'center' });
+    rgb(col); doc.roundedRect(ex, ey, ew, headerH, 1.5, 1.5, 'F');
+    doc.rect(ex, ey + headerH / 2, ew, headerH / 2, 'F'); // aplanar bottom del header
+    fnt('bold', 6); tc(White);
+    doc.text(label, ex + ew / 2, ey + headerH * 0.7, { align: 'center' });
+    
     // Body entidad
-    rgb(White); drw([col[0]*0.6, col[1]*0.6, col[2]*0.6]); lw(0.3);
-    doc.roundedRect(ex, ey + 7.5, ew, eh - 7.5, 0, 0, 'FD');
-    doc.rect(ex, ey + 7.5, ew, 2, 'FD'); // aplanar top
-    fnt('normal', 5); tc(Dark);
+    rgb(White); drw([col[0]*0.6, col[1]*0.6, col[2]*0.6]); lw(0.35);
+    doc.roundedRect(ex, ey + headerH, ew, eh - headerH, 0, 0, 'FD');
+    doc.rect(ex, ey + headerH, ew, 2, 'FD'); // aplanar top del body
+    
     attrs.forEach((a, i) => {
       const isPK = a.startsWith('PK');
       const isFK = a.startsWith('FK');
-      if (isPK) { fnt('bold', 5); tc([180, 90, 10]); }
-      else if (isFK) { fnt('bold', 5); tc([30, 100, 180]); }
-      else { fnt('normal', 5); tc(Mid); }
-      doc.text(a, ex + 2, ey + 11.5 + i * 4.3);
+      if (isPK) { fnt('bold', 5); tc([210, 80, 10]); }
+      else if (isFK) { fnt('bold', 5); tc([20, 90, 200]); }
+      else { fnt('normal', 5); tc(Dark); }
+      doc.text(a, ex + 3, ey + headerH + 4.5 + i * rowH);
     });
-    return ey + eh;
+    return eh;
   };
 
   // Flecha relación
@@ -657,14 +767,17 @@ export async function generarInforme() {
     }
   };
 
-  const eW = 34;
-  const eRoles    = { x: ML + 3,   y: erTop + 6,   col: [40,80,180] };
-  const eUsuarios = { x: ML + 3,   y: erTop + 35,  col: Navy };
-  const eCats     = { x: ML + 3,   y: erTop + 80,  col: [20,120,70] };
-  const eProds    = { x: ML + 42,  y: erTop + 72,  col: [140,60,20] };
-  const eMesas    = { x: ML + 82,  y: erTop + 6,   col: [20,120,140] };
-  const ePedidos  = { x: ML + 82,  y: erTop + 38,  col: [120,40,160] };
-  const eDetalle  = { x: ML + 122, y: erTop + 36,  col: [160,80,20] };
+  const eW = 42;
+  const col1 = ML + 4;
+  const col2 = ML + 66;
+  const col3 = ML + 128;
+  const eRoles    = { x: col1, y: erTop + 6,  col: [40, 80, 180] };
+  const eUsuarios = { x: col1, y: erTop + 40, col: Navy };
+  const eCats     = { x: col1, y: erTop + 84, col: [20, 120, 70] };
+  const eMesas    = { x: col2, y: erTop + 6,  col: [20, 120, 140] };
+  const ePedidos  = { x: col2, y: erTop + 40, col: [120, 40, 160] };
+  const eProds    = { x: col2, y: erTop + 84, col: [140, 60, 20] };
+  const eDetalle  = { x: col3, y: erTop + 60, col: [160, 80, 20] };
 
   ent('ROLES',         ['PK id_rol', 'nombre'],                                         eRoles.x,    eRoles.y,    eW, eRoles.col);
   ent('USUARIOS',      ['PK id_usuario', 'nombre_usuario', 'contrasena', 'FK id_rol', 'activo'], eUsuarios.x, eUsuarios.y, eW, eUsuarios.col);
@@ -672,29 +785,30 @@ export async function generarInforme() {
   ent('PRODUCTOS',     ['PK id_producto', 'nombre', 'precio', 'FK id_categoria', 'disponible'], eProds.x, eProds.y, eW, eProds.col);
   ent('MESAS',         ['PK id_mesa', 'numero', 'capacidad', 'estado (ENUM)'],           eMesas.x,    eMesas.y,    eW, eMesas.col);
   ent('PEDIDOS',       ['PK id_pedido', 'FK id_mesa', 'FK id_usuario', 'total', 'estado', 'created_at'], ePedidos.x, ePedidos.y, eW, ePedidos.col);
-  ent('DETALLE_PEDIDO',['PK id_detalle', 'FK id_pedido', 'FK id_producto', 'cantidad', 'subtotal'], eDetalle.x, eDetalle.y, eW + 5, eDetalle.col);
+  ent('DETALLE_PEDIDO',['PK id_detalle', 'FK id_pedido', 'FK id_producto', 'cantidad', 'subtotal'], eDetalle.x, eDetalle.y, eW, eDetalle.col);
 
   // Relaciones
-  fkLine(eRoles.x + eW,    eRoles.y + 4,    eUsuarios.x + eW,  eUsuarios.y + 4);
-  fkLine(eCats.x + eW,     eCats.y + 4,     eProds.x,          eProds.y + 4);
-  fkLine(eMesas.x,         eMesas.y + 12,   ePedidos.x + eW,   ePedidos.y + 4);
-  fkLine(eUsuarios.x + eW, eUsuarios.y + 12,ePedidos.x,        ePedidos.y + 12);
-  fkLine(ePedidos.x + eW,  ePedidos.y + 8,  eDetalle.x,        eDetalle.y + 8);
-  fkLine(eProds.x + eW,    eProds.y + 8,    eDetalle.x + 4,    eDetalle.y + 18);
+  fkLine(eRoles.x + eW / 2,    erTop + 6 + 21,    eUsuarios.x + eW / 2,  eUsuarios.y);
+  fkLine(eCats.x + eW,         erTop + 84 + 13,   eProds.x,              erTop + 84 + 18);
+  fkLine(eMesas.x + eW / 2,    erTop + 6 + 31,    ePedidos.x + eW / 2,   ePedidos.y);
+  fkLine(eUsuarios.x + eW,     erTop + 40 + 18,   ePedidos.x,            erTop + 40 + 20.5);
+  fkLine(ePedidos.x + eW,      erTop + 40 + 20.5, eDetalle.x,            erTop + 60 + 10);
+  fkLine(eProds.x + eW,        erTop + 84 + 18,   eDetalle.x,            erTop + 60 + 22);
 
   // Leyenda ER
   fnt('bold', 5.5); tc(Orange);
-  doc.text('PK = Clave Primaria  ·  FK = Clave Foránea  ·  ──▶ = Relación 1:N', ML + 5, erTop + erH - 5);
+  doc.text('PK = Clave Primaria  |  FK = Clave Foranea  |  --> = Relacion 1:N', ML + 5, erTop + erH - 5);
 
   y = erTop + erH + 7;
 
-  sub('3.2  Índices y Vistas SQL');
-  // Tabla de índices
+  sub('3.2  Indices y Vistas SQL');
+  const COL_IDX_NAME = ML + 4;
+  const COL_IDX_DESC = ML + 62;
   need(8);
   rgb(NavyMid); doc.rect(ML, y, CW, 7, 'F');
   fnt('bold', 6.5); tc(White);
-  doc.text('Índice', ML + 4, y + 5);
-  doc.text('Optimiza', ML + 70, y + 5);
+  doc.text('Indice', COL_IDX_NAME, y + 5);
+  doc.text('Optimiza', COL_IDX_DESC, y + 5);
   y += 7;
   [
     ['idx_productos_categoria',  'Filtrado de productos por categoría en el menú del mozo'],
@@ -707,8 +821,8 @@ export async function generarInforme() {
     need(6.5);
     rgb(i % 2 === 0 ? White : GrayBg); doc.rect(ML, y, CW, 6, 'F');
     drw(GrayL); lw(0.2); doc.rect(ML, y, CW, 6, 'S');
-    fnt('normal', 6.5); tc(Dark); doc.text(ix, ML + 4, y + 4.2);
-    tc(Mid); doc.text(d, ML + 70, y + 4.2);
+    fnt('normal', 6.5); tc(Dark); doc.text(ix, COL_IDX_NAME, y + 4.2);
+    tc(Mid); doc.text(d, COL_IDX_DESC, y + 4.2);
     y += 6;
   });
   y += 4;
@@ -733,7 +847,7 @@ export async function generarInforme() {
 
   section('Sección 4  ·  Flujo de Eventos: ABM de Productos');
 
-  sub('4.1  Flujo completo GUI → Service → DAO → MySQL');
+  sub('4.1  Flujo completo GUI -> Service -> DAO -> MySQL');
   para('El módulo ABM de Productos permite listar, dar de alta, modificar disponibilidad y dar de baja productos del catálogo. Todas las operaciones se ejecutan en hilos de fondo (SwingWorker) para no bloquear el EDT.');
 
   code([
@@ -764,15 +878,16 @@ export async function generarInforme() {
     '        return "Producto editado correctamente";',
     '    } catch (SQLException e) { return "Error: " + e.getMessage(); }',
     '}',
-  ], 'Flujo completo — GUI → ProductoService → ProductoDAOImpl → MySQL');
+  ], 'Flujo completo: GUI -> ProductoService -> ProductoDAOImpl -> MySQL');
 
-  sub('4.2  Capturas del sistema — ABM Productos');
-  await img('/imgsistema/ProductosABM/ProductosActuales-1.png',       ML,       y, 85, 54, 'Vista principal: listado de productos');
-  await img('/imgsistema/ProductosABM/AltaProducto.png',              ML + 90, y, 82, 54, 'Dialog: alta de nuevo producto');
+  sub('4.2  Capturas del sistema - ABM Productos');
+  const abmPair = pairImg();
+  await img('/imgsistema/ProductosABM/ProductosActuales-1.png',       abmPair.left,  y, abmPair.w, 54, 'Vista principal: listado de productos');
+  await img('/imgsistema/ProductosABM/AltaProducto.png',              abmPair.right, y, abmPair.w, 54, 'Dialog: alta de nuevo producto');
   y += 60;
   need(60);
-  await img('/imgsistema/ProductosABM/ModificacionProducto.png',      ML,       y, 85, 54, 'Dialog: modificación de producto');
-  await img('/imgsistema/ProductosABM/ConfirmacionBajaProducto.png',  ML + 90, y, 82, 54, 'Confirmación de baja (JOptionPane)');
+  await img('/imgsistema/ProductosABM/ModificacionProducto.png',      abmPair.left,  y, abmPair.w, 54, 'Dialog: modificacion de producto');
+  await img('/imgsistema/ProductosABM/ConfirmacionBajaProducto.png',  abmPair.right, y, abmPair.w, 54, 'Confirmacion de baja (JOptionPane)');
   y += 60;
 
   sub('4.3  Estados de Mesa — State Machine visual');
@@ -890,12 +1005,16 @@ export async function generarInforme() {
   const patW = (CW - 5) / 2;
   let patCol = 0;
   let patRowY = y;
-  pats.forEach((p, idx) => {
+  let lastRowH = 0;
+  pats.forEach((p) => {
     const pLines = doc.splitTextToSize(p.d, patW - 14);
     const ph = 6 + pLines.length * 4 + 8;
     if (patCol === 0) {
       need(ph + 3);
       patRowY = y;
+      lastRowH = ph;
+    } else {
+      lastRowH = Math.max(lastRowH, ph);
     }
     const px = ML + patCol * (patW + 5);
     // Sombra
@@ -912,10 +1031,10 @@ export async function generarInforme() {
     patCol++;
     if (patCol === 2) {
       patCol = 0;
-      y = patRowY + ph + 3;
+      y = patRowY + lastRowH + 3;
     }
   });
-  if (patCol !== 0) y = patRowY + 50;
+  if (patCol !== 0) y = patRowY + lastRowH + 3;
   y += 4;
 
   sub('7.2  Transacción JDBC atómica — Pedido + Detalles en Batch');
@@ -950,7 +1069,7 @@ export async function generarInforme() {
     '        return "Error al insertar pedido: " + ex.getMessage();',
     '    }',
     '}',
-  ], 'PedidoDAOImpl.java — Transacción ACID + Batch Insert');
+  ], 'PedidoDAOImpl.java - Transaccion ACID + Batch Insert');
 
   sub('7.3  Flujo de carga de pedido (capturas)');
   para('El mozo filtra el menú por categorías, selecciona productos y confirma en CheckoutDialog. La inserción es atómica: si falla algún detalle, se hace rollback completo.');
@@ -958,10 +1077,10 @@ export async function generarInforme() {
   need(58);
   const cpY = y;
   const cpW = (CW - 6) / 4;
-  await img('/imgsistema/CargarPedido/MenuPrincipal-1.png',          ML,                cpY, cpW, 50, '① Menú principal');
-  await img('/imgsistema/CargarPedido/MenuFiltradoCategorias-2.png', ML + cpW + 2,      cpY, cpW, 50, '② Filtro categorías');
-  await img('/imgsistema/CargarPedido/SeleccionDeProductos-3.png',   ML + (cpW+2)*2,    cpY, cpW, 50, '③ Selección');
-  await img('/imgsistema/CargarPedido/Checkout-4.png',               ML + (cpW+2)*3,    cpY, cpW, 50, '④ Checkout');
+  await img('/imgsistema/CargarPedido/MenuPrincipal-1.png',          ML,                cpY, cpW, 50, '[1] Menu principal');
+  await img('/imgsistema/CargarPedido/MenuFiltradoCategorias-2.png', ML + cpW + 2,      cpY, cpW, 50, '[2] Filtro categorias');
+  await img('/imgsistema/CargarPedido/SeleccionDeProductos-3.png',   ML + (cpW+2)*2,    cpY, cpW, 50, '[3] Seleccion');
+  await img('/imgsistema/CargarPedido/Checkout-4.png',               ML + (cpW+2)*3,    cpY, cpW, 50, '[4] Checkout');
   y = cpY + 56;
 
   // ── Footers en todas las páginas
