@@ -19,11 +19,9 @@ export async function generarInforme() {
   const Dark    = [28,  36,  52];   // texto oscuro
   const Mid     = [80,  94, 114];   // texto secundario
   const Muted   = [140, 155, 172];  // texto terciario/captions
-  const Orange  = [230,  90,  15];  // acento primario
-  const OrangeL = [248, 175, 100];  // acento claro
-  const OrangePale=[254, 237, 215]; // fondo muy claro naranja
+  const Orange  = [212,   0,   0];  // acento primario Rosso Corsa
+  const OrangeL = [240,  90,  90];  // acento claro
   const White   = [255, 255, 255];
-  const OffWhite= [249, 250, 252];
   const GrayL   = [220, 228, 238];  // borde suave
   const GrayBg  = [244, 247, 251];  // fondo de cards
   const CodeBg  = [22,  30,  52];   // fondo bloque de código (oscuro)
@@ -263,28 +261,6 @@ export async function generarInforme() {
     return bx + tw + 2.5;
   };
 
-  // ─── Card de información ──────────────────────────────────────────────────
-  const infoCard = (title, body, col = Orange, extraH = 0) => {
-    const lines = doc.splitTextToSize(body, CW - 14);
-    const h = 8 + lines.length * 4.5 + 10 + extraH;
-    need(h + 5);
-    // Sombra
-    rgb([210, 220, 235]); doc.roundedRect(ML + 1, y + 1, CW, h, 2.5, 2.5, 'F');
-    // Card
-    rgb(GrayBg); drw(GrayL); lw(0.3);
-    doc.roundedRect(ML, y, CW, h, 2.5, 2.5, 'FD');
-    // Acento lateral
-    rgb(col); doc.roundedRect(ML, y, 4, h, 1.5, 1.5, 'F');
-    doc.rect(ML + 2, y, 2, h, 'F'); // aplanado derecho
-    // Título
-    fnt('bold', 8.5); tc(Dark); doc.text(title, ML + 8, y + 7);
-    // Cuerpo
-    fnt('normal', 7.5); tc(Mid);
-    const startY = y + 13;
-    lines.forEach((l, i) => doc.text(l, ML + 8, startY + i * 4.5));
-    y += h + 5;
-  };
-
   // ─── Card de fix/hotfix ───────────────────────────────────────────────────
   const fixCard = (title, prob, sol, res, col) => {
     const pLines = doc.splitTextToSize(prob, CW - 30);
@@ -351,7 +327,9 @@ export async function generarInforme() {
             fnt('normal', 5.8); tc(Muted);
             doc.text(caption, ix + iw / 2, iy + ih + 4.5, { align: 'center' });
           }
-        } catch (_) {}
+        } catch {
+          // Si el canvas no puede procesar la imagen, el informe continúa.
+        }
         resolve();
       };
       el.onerror = () => {
@@ -937,10 +915,10 @@ export async function generarInforme() {
   para('En la primera auditoría se detectaron 3 tareas marcadas como "Completadas" en Notion que estaban ausentes en la base de código real. Se definió el bloque Fix#1 para cerrarlas.');
 
   fixCard(
-    'Tests Unitarios de Capa DAO (JUnit 5)',
-    'Solo existía ConexionDBTest con tests genéricos. Faltaban validaciones para ProductoDAOImpl, MesaDAOImpl y PedidoDAOImpl.',
-    'Tests de integración reales contra TiDB Cloud con @AfterEach cleanup SQL. Mesa reservada #9990 como entidad de prueba aislada. Tag @Tag("integration") para CI.',
-    '35 pruebas — 100% éxito  |  165 segundos contra TiDB Cloud en AWS.',
+    'Estrategia de pruebas JUnit 5',
+    'La cobertura estaba fragmentada: había que demostrar reglas de negocio, delegación entre capas y persistencia real sin confundir una base de prueba con producción.',
+    '44 pruebas unitarias con Mockito y 39 pruebas de integración JDBC. DedicatedDatabaseExtension exige la base restomanager_test y cada caso que escribe limpia sus datos.',
+    '83 pruebas documentadas - 100% éxito  |  77,5% líneas  |  56,6% ramas.',
     BlueA
   );
 

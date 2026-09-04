@@ -1,11 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { generarInforme } from './generarInforme.js';
 import { 
   BookOpen, 
   Layers, 
   Code2, 
   Activity, 
-  Terminal as TerminalIcon, 
   Play, 
   CheckCircle2, 
   AlertTriangle, 
@@ -20,7 +19,9 @@ import {
   Sparkles,
   Server,
   UserCheck,
-  Check
+  Check,
+  ShieldCheck,
+  CheckCheck
 } from 'lucide-react';
 
 // Code snippets to display in the Interactive IDE
@@ -815,8 +816,1268 @@ public class CheckoutDialog extends javax.swing.JDialog {
         TotalNum.setText(String.format(java.util.Locale.US, "$%.2f", total));
     }
 }`
+  },
+
+  // --- TESTS & ASEGURAMIENTO (UNIT & INTEGRATION) ---
+  pedidoServiceTest: {
+    name: 'PedidoServiceTest.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/service/PedidoServiceTest.java',
+    language: 'java',
+    desc: 'Pruebas unitarias con JUnit 5 y Mockito. Aísla las reglas de negocio (validación de stock, cálculo con BigDecimal, transiciones de estado) simulando DAOs sin tocar la base de datos.',
+    code: `package com.restaurant.backend.service;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+import java.math.BigDecimal;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import com.restaurant.backend.dao.PedidoDAO;
+import com.restaurant.backend.model.*;
+
+@ExtendWith(MockitoExtension.class)
+@DisplayName("PedidoService — pruebas unitarias")
+class PedidoServiceTest {
+
+    @Mock private PedidoDAO pedidoDAO;
+    @Mock private MesaService mesaService;
+    @Mock private ProductoService productoService;
+    private PedidoService service;
+
+    @BeforeEach
+    void setUp() {
+        service = new PedidoService(pedidoDAO, mesaService, productoService);
+    }
+
+    @Test
+    void crearPedidoPropagaErrorDeStockSinPersistir() {
+        Producto producto = producto(1, 1);
+        when(mesaService.obtenerPorId(1)).thenReturn(mesa(1, EstadoMesa.LIBRE));
+        when(productoService.validarStockDisponible(1, 2)).thenReturn("Stock insuficiente");
+
+        // Act & Assert: Debe rechazar la creación inmediatamente
+        assertEquals("Stock insuficiente",
+                service.crearPedido(mesa(1, EstadoMesa.LIBRE), usuario(1), List.of(detalle(producto, 2))));
+
+        // Seguridad transaccional: El DAO NUNCA debe ser invocado si falló el stock
+        verify(pedidoDAO, never()).Insertar(any(), anyList());
+    }
+
+    @Test
+    void crearPedidoCalculaTotalDescuentaStockYOcupaMesa() {
+        Mesa mesa = mesa(1, EstadoMesa.LIBRE);
+        Producto productoCompleto = producto(2, 10);
+        productoCompleto.setPrecio(new BigDecimal("250.00"));
+        DetallePedido detalle = detalle(producto(2, 0), 3);
+
+        when(mesaService.obtenerPorId(1)).thenReturn(mesa);
+        when(productoService.validarStockDisponible(2, 3)).thenReturn(null);
+        when(productoService.obtenerPorId(2)).thenReturn(productoCompleto);
+        when(pedidoDAO.Insertar(any(Pedido.class), eq(List.of(detalle))))
+                .thenReturn("Pedido y detalles insertados correctamente");
+        when(productoService.descontarStock(2, 3)).thenReturn("Producto editado correctamente");
+        when(mesaService.ocupar(1)).thenReturn("Se cambio el estado");
+
+        String resultado = service.crearPedido(mesa, usuario(4), List.of(detalle), "sin sal");
+
+        assertEquals("Se cambio el estado", resultado);
+
+        // ArgumentCaptor audita los datos reales que llegaron a la frontera de persistencia
+        ArgumentCaptor<Pedido> pedidoCaptor = ArgumentCaptor.forClass(Pedido.class);
+        verify(pedidoDAO).Insertar(pedidoCaptor.capture(), eq(List.of(detalle)));
+
+        Pedido guardado = pedidoCaptor.getValue();
+        assertEquals(0, new BigDecimal("750.00").compareTo(guardado.getTotal()));
+        assertEquals("sin sal", guardado.getObservacion());
+        assertEquals(EstadoPedido.ABIERTO, guardado.getEstado());
+
+        // Verifica llamadas en orden
+        verify(productoService).descontarStock(2, 3);
+        verify(mesaService).ocupar(1);
+    }
+}`
+  },
+  pedidoDAOImplIT: {
+    name: 'PedidoDAOImplIT.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/dao/PedidoDAOImplIT.java',
+    language: 'java',
+    desc: 'Test de integración real contra TiDB Cloud. Ejecuta transacciones JDBC reales, captura claves primarias autogeneradas e implementa @AfterEach para limpieza idempotente.',
+    code: `package com.restaurant.backend.dao;
+
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.extension.ExtendWith;
+import com.restaurant.backend.model.*;
+import com.restaurant.backend.support.DedicatedDatabaseExtension;
+import java.math.BigDecimal;
+import java.util.List;
+import static org.junit.jupiter.api.Assertions.*;
+
+@Tag("integration")
+@DisplayName("PedidoDAOImpl — Tests de Integración")
+@ExtendWith(DedicatedDatabaseExtension.class) // Salvaguarda contra BD productiva
+class PedidoDAOImplIT {
+
+    private PedidoDAOImpl dao;
+    private Integer pedidoInsertadoId; // Tracking para cleanup en teardown
+
+    @BeforeEach
+    void setUp() {
+        dao = new PedidoDAOImpl();
+        pedidoInsertadoId = null;
+    }
+
+    @AfterEach
+    void tearDown() {
+        // Garantiza que la BD quede en estado limpio idéntico tras cada prueba
+        if (pedidoInsertadoId != null && pedidoInsertadoId > 0) {
+            eliminarPedidoPrueba(pedidoInsertadoId);
+            pedidoInsertadoId = null;
+        }
+    }
+
+    @Test
+    @DisplayName("Insertar() persiste pedido y detalles en transacción con generated keys")
+    void insertar_debePersistirPedidoYDetalles() {
+        Pedido pedido = new Pedido();
+        pedido.setMesa(new Mesa(1, 1, 4, EstadoMesa.LIBRE));
+        pedido.setUsuario(new Usuario(1, "Test", "User", "test", "123456", new Rol(1, "ADMIN"), true));
+        pedido.setTotal(new BigDecimal("3500.00"));
+        pedido.setObservacion("Test integracion IT");
+
+        DetallePedido det = new DetallePedido();
+        det.setProducto(new Producto(1, "Prod", null, new BigDecimal("3500.00"), 10, null, true));
+        det.setCantidad(1);
+        det.setPrecioUnitario(new BigDecimal("3500.00"));
+
+        String resultado = dao.Insertar(pedido, List.of(det));
+        assertEquals("Pedido y detalles insertados correctamente", resultado);
+
+        // Se verifica que la base de datos le asignó un ID autoincremental
+        assertNotNull(pedido.getIdPedido());
+        pedidoInsertadoId = pedido.getIdPedido(); // Guardado para teardown
+
+        // Verificamos lectura real desde TiDB Cloud
+        Pedido recuperado = dao.getPedidoPorId(pedidoInsertadoId);
+        assertNotNull(recuperado);
+        assertEquals(0, new BigDecimal("3500.00").compareTo(recuperado.getTotal()));
+    }
+}`
+  },
+  dedicatedDatabaseExtension: {
+    name: 'DedicatedDatabaseExtension.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/support/DedicatedDatabaseExtension.java',
+    language: 'java',
+    desc: 'Extensión de ciclo de vida de JUnit 5 (BeforeAllCallback). Intercepta la URL JDBC antes de inicializar cualquier test de integración y cancela la ejecución si no apunta explícitamente a restomanager_test.',
+    code: `package com.restaurant.backend.support;
+
+import org.junit.jupiter.api.extension.BeforeAllCallback;
+import org.junit.jupiter.api.extension.ExtensionContext;
+
+/**
+ * Impide que una prueba de integración use accidentalmente la base operativa.
+ * Se ejecuta en la fase BeforeAll de JUnit 5 antes de inicializar conexiones.
+ */
+public final class DedicatedDatabaseExtension implements BeforeAllCallback {
+
+    @Override
+    public void beforeAll(ExtensionContext context) {
+        String url = System.getProperty("db.url", "");
+
+        // Expresión regular que verifica que la base termine en 'restomanager_test'
+        if (!url.matches("(?i).*[/:]restomanager_test(?:[?;].*)?$")) {
+            throw new IllegalStateException(
+                    "Las integraciones requieren -Ddb.url apuntando explícitamente a restomanager_test"
+            );
+        }
+    }
+}`
+  },
+  conexionDBIT: {
+    name: 'ConexionDBIT.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/util/ConexionDBIT.java',
+    language: 'java',
+    desc: 'Test de integración extremo a extremo (E2E). Evalúa la conectividad HikariCP con TiDB Cloud y ejecuta el flujo completo de vida de un pedido (reserva, pedido, stock y cierre).',
+    code: `package com.restaurant.backend.util;
+
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.extension.ExtendWith;
+import com.restaurant.backend.service.*;
+import com.restaurant.backend.model.*;
+import com.restaurant.backend.support.DedicatedDatabaseExtension;
+import static org.junit.jupiter.api.Assertions.*;
+
+@Tag("integration")
+@DisplayName("Conexión y flujo completo — Tests de Integración")
+@ExtendWith(DedicatedDatabaseExtension.class)
+public class ConexionDBIT {
+
+    @Test
+    public void testDatabaseConnection() {
+        ConexionDB conexion = ConexionDB.getInstance();
+        assertNotNull(conexion, "La instancia de ConexionDB no debe ser nula");
+
+        // Verifica handshake SSL y disponibilidad del pool HikariCP
+        boolean isConnected = conexion.testConnection();
+        assertTrue(isConnected, "La conexión a TiDB Cloud debe ser exitosa");
+    }
+
+    @Test
+    public void testCompleteOrderFlow() {
+        // 1. Obtiene servicios desde la Factory
+        MesaService mesaService = ServicioFactory.getMesaService();
+        PedidoService pedidoService = ServicioFactory.getPedidoService();
+        ProductoService productoService = ServicioFactory.getProductoService();
+
+        // 2. Consulta producto y stock en TiDB Cloud
+        Producto producto = productoService.obtenerPorId(3);
+        assertNotNull(producto);
+        int originalStock = producto.getStock();
+
+        // 3. Ocupa mesa 1 y abre pedido
+        mesaService.liberar(1);
+        DetallePedido detalle = new DetallePedido();
+        detalle.setProducto(producto);
+        detalle.setCantidad(2);
+        detalle.setPrecioUnitario(producto.getPrecio());
+
+        String res = pedidoService.crearPedido(mesaService.obtenerPorId(1),
+                                               new Usuario(1), List.of(detalle));
+        assertNotNull(res);
+
+        // 4. Valida descuento real de stock en la BD
+        Producto actualizado = productoService.obtenerPorId(3);
+        assertEquals(originalStock - 2, actualizado.getStock());
+
+        // 5. Cleanup y restauración de estado
+        productoService.sumarStock(3, 2);
+        mesaService.liberar(1);
+    }
+}`
+  },
+  modelosTest: {
+    name: 'ModelosTest.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/model/ModelosTest.java',
+    language: 'java',
+    desc: 'Tests unitarios de POJOs y lógica de dominio. Verifica que el cálculo de subtotales y totales con BigDecimal mantenga precisión monetaria y manejo ante valores nulos.',
+    code: `package com.restaurant.backend.model;
+
+import static org.junit.jupiter.api.Assertions.*;
+import java.math.BigDecimal;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+@DisplayName("Modelos — cálculos y valores iniciales")
+class ModelosTest {
+
+    @Test
+    void detalleRecalculaSubtotalAlCambiarCantidadOPrecio() {
+        DetallePedido detalle = new DetallePedido();
+        detalle.setPrecioUnitario(new BigDecimal("125.50"));
+        detalle.setCantidad(3);
+
+        // 125.50 * 3 = 376.50
+        assertEquals(0, new BigDecimal("376.50").compareTo(detalle.getSubtotal()));
+    }
+
+    @Test
+    void detalleConPrecioNuloTieneSubtotalCero() {
+        DetallePedido detalle = new DetallePedido();
+        detalle.setPrecioUnitario(null);
+
+        assertEquals(BigDecimal.ZERO, detalle.getSubtotal());
+    }
+
+    @Test
+    void constructoresDefinenEstadosInicialesSeguros() {
+        assertEquals(EstadoPedido.ABIERTO, new Pedido().getEstado());
+        assertEquals(BigDecimal.ZERO, new Pedido().getTotal());
+        assertEquals(EstadoMesa.LIBRE, new Mesa().getEstado());
+        assertEquals(4, new Mesa().getCapacidad());
+        assertTrue(new Producto().isDisponible());
+        assertTrue(new Categoria().isActiva());
+        assertTrue(new Usuario().isActivo());
+    }
+}`
   }
 };
+
+// Catalogo real de Backend/src/test/java/com/restaurant/backend.
+// Las cantidades y nombres se contrastaron con el repositorio Programacion2-Final.
+const TEST_CATALOG = [
+  {
+    id: 'modelosTest',
+    name: 'ModelosTest.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/model/ModelosTest.java',
+    group: 'unit',
+    groupLabel: 'Unitario',
+    area: 'Modelo',
+    count: 5,
+    summary: 'Subtotales, totales y valores iniciales seguros del dominio.',
+    concept: 'Prueba reglas pequeñas en memoria. BigDecimal mantiene exactitud monetaria y los modelos conservan invariantes básicas.',
+    checks: [
+      'Recalcula subtotales y totales al agregar o quitar detalles.',
+      'Trata un precio o subtotal nulo sin lanzar una excepción.',
+      'Confirma estados iniciales como ABIERTO, LIBRE y disponible.'
+    ],
+    methods: [
+      'detalleRecalculaSubtotalAlCambiarCantidadOPrecio',
+      'detalleConPrecioNuloTieneSubtotalCero',
+      'pedidoAgregaYQuitaDetallesRecalculandoTotal',
+      'pedidoIgnoraSubtotalesNulosAlRecalcular',
+      'constructoresDefinenEstadosInicialesSeguros'
+    ],
+    snippetKey: 'modelosTest'
+  },
+  {
+    id: 'productoServiceTest',
+    name: 'ProductoServiceTest.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/service/ProductoServiceTest.java',
+    group: 'unit',
+    groupLabel: 'Unitario',
+    area: 'Servicio',
+    count: 9,
+    summary: 'Filtros de catálogo, validaciones de producto y control de stock.',
+    concept: 'Mockea ProductoDAO para aislar las reglas de negocio y demostrar que los datos inválidos no llegan a persistencia.',
+    checks: [
+      'Filtra por categoría sin distinguir mayúsculas y solo devuelve productos disponibles.',
+      'Rechaza nombres, IDs y cantidades inválidas antes de consultar al DAO.',
+      'Detecta producto no disponible, stock insuficiente y descuenta la cantidad exacta.'
+    ],
+    methods: [
+      'categoriaVaciaDevuelveListaVaciaSinConsultarDao',
+      'filtraCategoriaSinDistinguirMayusculasYSoloDisponibles',
+      'crearRechazaProductoInvalidoSinPersistir',
+      'actualizarExigeIdValido',
+      'crearValidoDelegaEnDao',
+      'validarStockDetectaProductoNoDisponible',
+      'validarStockDetectaFaltante',
+      'descontarStockActualizaCantidadExacta',
+      'idsYCantidadesInvalidasNoConsultanDao'
+    ],
+    snippetKey: 'productoServiceTest'
+  },
+  {
+    id: 'mesaServiceTest',
+    name: 'MesaServiceTest.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/service/MesaServiceTest.java',
+    group: 'unit',
+    groupLabel: 'Unitario',
+    area: 'Servicio',
+    count: 8,
+    summary: 'Estados de mesa, reservas, ocupación y liberación.',
+    concept: 'Verifica la máquina de estados con mocks. Una transición inválida debe terminar antes de llamar al DAO.',
+    checks: [
+      'Permite ocupar mesas LIBRES o RESERVADAS y rechaza FUERA_DE_SERVICIO.',
+      'Acepta solo transiciones de estado definidas por la lógica del servicio.',
+      'Cierra pedidos activos antes de liberar la mesa y deja intactos los cerrados.'
+    ],
+    methods: [
+      'obtenerPorNumeroBuscaEnListado',
+      'ocuparAceptaMesaLibreOReservada',
+      'ocuparRechazaEstadoNoOcupable',
+      'reservarYCancelarReservaRespetanEstado',
+      'cambiarEstadoRechazaTransicionInvalida',
+      'cambiarEstadoAceptaTransicionesDefinidas',
+      'liberarCierraSoloPedidosActivosYLuegoLiberaMesa',
+      'validacionesBasicasEvitanAccesoInnecesario'
+    ],
+    snippetKey: 'mesaServiceTest'
+  },
+  {
+    id: 'pedidoServiceTest',
+    name: 'PedidoServiceTest.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/service/PedidoServiceTest.java',
+    group: 'unit',
+    groupLabel: 'Unitario',
+    area: 'Servicio',
+    count: 12,
+    summary: 'Creación, ítems, total, inventario, cierre y cancelación.',
+    concept: 'Aísla PedidoService con mocks y captura el objeto enviado al DAO para revisar reglas y efectos secundarios.',
+    checks: [
+      'Valida mesa, usuario, detalles, estado y stock antes de persistir.',
+      'Compara el total calculado con BigDecimal y verifica las colaboraciones.',
+      'Evita tocar total o stock cuando falla la inserción de un detalle.'
+    ],
+    methods: [
+      'crearPedidoValidaDatosObligatorios',
+      'crearPedidoRechazaMesaFueraDeServicio',
+      'crearPedidoRechazaDetalleSinProducto',
+      'crearPedidoPropagaErrorDeStockSinPersistir',
+      'crearPedidoCalculaTotalDescuentaStockYOcupaMesa',
+      'crearPedidoEnMesaOcupadaNoIntentaOcuparlaOtraVez',
+      'agregarItemPersisteActualizaTotalYDescuentaStock',
+      'agregarItemNoActualizaNiDescuentaSiFallaInsercion',
+      'agregarItemSoloAceptaPedidosAbiertos',
+      'cerrarPedidoCambiaEstadoSinLiberarMesa',
+      'cancelarPedidoRestauraStockSinLiberarMesa',
+      'consultasInvalidasNoLleganAlDao'
+    ],
+    snippetKey: 'pedidoServiceTest'
+  },
+  {
+    id: 'usuarioServiceTest',
+    name: 'UsuarioServiceTest.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/service/UsuarioServiceTest.java',
+    group: 'unit',
+    groupLabel: 'Unitario',
+    area: 'Servicio',
+    count: 4,
+    summary: 'Login, registro, validaciones y desactivación de usuarios.',
+    concept: 'Normaliza la entrada y valida campos antes de delegar. Los escenarios inválidos no generan escrituras.',
+    checks: [
+      'Rechaza credenciales vacías y normaliza espacios del usuario.',
+      'Exige contraseña, rol e identidad válida antes de registrar o actualizar.',
+      'Delega el caso válido y conserva la respuesta del DAO.'
+    ],
+    methods: [
+      'iniciarSesionValidaVaciosYNormalizaUsuario',
+      'registrarValidaTodosLosCamposAntesDePersistir',
+      'registrarValidoDelegaEnDao',
+      'actualizarYDesactivarValidanId'
+    ],
+    snippetKey: 'usuarioServiceTest'
+  },
+  {
+    id: 'reporteServiceTest',
+    name: 'ReporteServiceTest.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/service/ReporteServiceTest.java',
+    group: 'unit',
+    groupLabel: 'Unitario',
+    area: 'Servicio y fábrica',
+    count: 2,
+    summary: 'Delegación de reportes e identidad de ServicioFactory.',
+    concept: 'Comprueba que el servicio no transforme los resultados y que la fábrica conserve una instancia por servicio.',
+    checks: [
+      'Devuelve las mismas listas y DTOs entregados por ReporteDAO.',
+      'Mantiene la misma instancia de ProductoService, MesaService, PedidoService, ReporteService y UsuarioService.'
+    ],
+    methods: [
+      'reporteServiceDelegaSinAlterarResultados',
+      'servicioFactoryDevuelveSiempreLaMismaInstancia'
+    ],
+    snippetKey: 'reporteServiceTest'
+  },
+  {
+    id: 'controllersTest',
+    name: 'ControllersTest.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/controller/ControllersTest.java',
+    group: 'unit',
+    groupLabel: 'Unitario',
+    area: 'Controlador',
+    count: 4,
+    summary: 'Puente entre la GUI y los servicios de producto, mesa, pedido y reportes.',
+    concept: 'Mockea los servicios y comprueba delegación. El controlador no decide reglas ni altera resultados.',
+    checks: [
+      'Expone las operaciones CRUD de ProductoController.',
+      'Delega operaciones de mesas y pedidos con sus argumentos.',
+      'Conserva listas y DTOs devueltos por reportes y categorías.'
+    ],
+    methods: [
+      'productoControllerDelegaTodasLasOperaciones',
+      'mesaControllerDelegaTodasLasOperaciones',
+      'pedidoControllerDelegaTodasLasOperaciones',
+      'reporteYCategoriaControllersDelegan'
+    ],
+    snippetKey: 'controllersTest'
+  },
+  {
+    id: 'productoDAOImplIT',
+    name: 'ProductoDAOImplIT.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/dao/ProductoDAOImplIT.java',
+    group: 'integration',
+    groupLabel: 'Integración',
+    area: 'DAO',
+    count: 14,
+    summary: 'Lecturas, JOIN con categorías, alta, edición y eliminación.',
+    concept: 'Usa JDBC real sobre la base de prueba. Cada alta se relee y se limpia en @AfterEach.',
+    checks: [
+      'Valida listas, IDs inválidos y categoría cargada por JOIN.',
+      'Inserta un producto, obtiene su ID y lo recupera por clave.',
+      'Comprueba edición, eliminación y respuestas ante datos ausentes.'
+    ],
+    methods: [
+      'getProductos_debeRetornarListaNoNula',
+      'getProductos_debeIncluirCategoria',
+      'getProductoPorId_idInvalido_debeRetornarNull',
+      'getProductoPorId_idInexistente_debeRetornarNull',
+      'insertar_productoValido_debeRetornarExitoYAsignarId',
+      'insertar_productoValido_debePoderseLeerPorId',
+      'insertar_productoNulo_debeRetornarError',
+      'insertar_sinParametro_debeRetornarMensajeIndicativo',
+      'editar_productoExistente_debeActualizar',
+      'editar_sinParametro_debeRetornarMensajeIndicativo',
+      'editar_idInexistente_debeRetornarMensajeNegativo',
+      'eliminar_idExistente_debeBorrar',
+      'eliminar_idInexistente_debeMensajeNegativo',
+      'eliminar_sinParametro_debeRetornarMensajeIndicativo'
+    ],
+    snippetKey: 'productoDAOImplIT'
+  },
+  {
+    id: 'pedidoDAOImplIT',
+    name: 'PedidoDAOImplIT.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/dao/PedidoDAOImplIT.java',
+    group: 'integration',
+    groupLabel: 'Integración',
+    area: 'DAO',
+    count: 11,
+    summary: 'Pedidos, detalles, estados, total y claves autogeneradas.',
+    concept: 'Comprueba persistencia real y lectura posterior. La alta usa una operación con pedido y detalles, seguida de cleanup.',
+    checks: [
+      'Filtra pedidos por estado y por mesa.',
+      'Inserta pedido y detalle, obtiene el ID generado y vuelve a leerlo.',
+      'Actualiza estado, detalles y total con valores persistidos.'
+    ],
+    methods: [
+      'getPedidos_debeRetornarListaNoNula',
+      'getPedidos_debeRetornarPedidosConCamposBasicos',
+      'getPedidosPorEstado_debeRetornarSoloPedidosConEseEstado',
+      'getPedidosPorMesa_debeRetornarPedidosDeMesa',
+      'insertar_pedidoConDetalles_debeCrearPedidoYDetalles',
+      'getPedidoPorId_idExistente_debeRetornarPedido',
+      'modificarEstado_pedidoExistente_debeActualizar',
+      'modificarEstado_idInexistente_debeMensajeNegativo',
+      'getDetallesPedido_debeRetornarDetalles',
+      'insertarDetalle_debeAgregarDetalle',
+      'actualizarTotal_debeActualizarTotal'
+    ],
+    snippetKey: 'pedidoDAOImplIT'
+  },
+  {
+    id: 'mesaDAOImplIT',
+    name: 'MesaDAOImplIT.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/dao/MesaDAOImplIT.java',
+    group: 'integration',
+    groupLabel: 'Integración',
+    area: 'DAO',
+    count: 8,
+    summary: 'Lectura de mesas, filtros, alta y cambios de estado.',
+    concept: 'Verifica SQL sobre una mesa de prueba. La limpieza se hace por SQL porque borrarMesa() todavía no está implementado.',
+    checks: [
+      'Devuelve listas válidas y filtra por LIBRE.',
+      'Distingue ID inválido de ID inexistente.',
+      'Inserta una mesa, cambia su estado y confirma el valor leído.'
+    ],
+    methods: [
+      'getMesas_debeRetornarListaNoNula',
+      'getMesaPorId_idInvalido_debeRetornarNull',
+      'getMesaPorId_idInexistente_debeRetornarNull',
+      'getMesasPorEstado_debeRetornarMesasFiltradas',
+      'nuevaMesa_mesaValida_debeInsertarYLeer',
+      'cambiarEstado_mesaExistente_debeActualizar',
+      'cambiarEstado_idInexistente_debeMensajeNegativo',
+      'getMesas_debeRetornarMesasConEstadoValido'
+    ],
+    snippetKey: 'mesaDAOImplIT'
+  },
+  {
+    id: 'conexionDBIT',
+    name: 'ConexionDBIT.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/util/ConexionDBIT.java',
+    group: 'integration',
+    groupLabel: 'Integración',
+    area: 'E2E y conexión',
+    count: 3,
+    summary: 'Conexión HikariCP y flujo mesa, pedido, stock y reporte.',
+    concept: 'Recorre servicios reales sobre la base de prueba. Es la prueba más amplia del camino que usa la GUI.',
+    checks: [
+      'Confirma la instancia y conexión de ConexionDB.',
+      'Crea un pedido, verifica descuento de stock y consulta reportes.',
+      'Libera una mesa con pedidos activos y comprueba estados finales.'
+    ],
+    methods: [
+      'testDatabaseConnection',
+      'testCompleteOrderFlow',
+      'testLiberarMesaConPedidosActivos'
+    ],
+    snippetKey: 'conexionDBIT'
+  },
+  {
+    id: 'categoriaDAOImplIT',
+    name: 'CategoriaDAOImplIT.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/dao/CategoriaDAOImplIT.java',
+    group: 'integration',
+    groupLabel: 'Integración',
+    area: 'DAO',
+    count: 1,
+    summary: 'Categorías activas con ID y nombre cargados.',
+    concept: 'Valida que la consulta no devuelva una lista vacía y que cada categoría sea utilizable por el catálogo.',
+    checks: [
+      'La lista existe y contiene registros.',
+      'Todas las categorías leídas están activas.',
+      'Cada registro trae ID y nombre.'
+    ],
+    methods: ['getCategoriasDevuelveCategoriasActivasCompletas'],
+    snippetKey: 'categoriaDAOImplIT'
+  },
+  {
+    id: 'usuarioDAOImplIT',
+    name: 'UsuarioDAOImplIT.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/dao/UsuarioDAOImplIT.java',
+    group: 'integration',
+    groupLabel: 'Integración',
+    area: 'DAO y autenticación',
+    count: 1,
+    summary: 'CRUD completo, autenticación y desactivación.',
+    concept: 'Persiste un usuario temporal, autentica con SHA-256, actualiza su nombre y confirma que un usuario inactivo no ingresa.',
+    checks: [
+      'Inserta un usuario y recibe su ID autogenerado.',
+      'Acepta la contraseña correcta y rechaza la incorrecta.',
+      'Actualiza, desactiva y limpia el registro temporal.'
+    ],
+    methods: ['flujoCrudYAutenticacionUsaHashSha256'],
+    snippetKey: 'usuarioDAOImplIT'
+  },
+  {
+    id: 'reporteDAOImplIT',
+    name: 'ReporteDAOImplIT.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/dao/ReporteDAOImplIT.java',
+    group: 'integration',
+    groupLabel: 'Integración',
+    area: 'DAO y reportes',
+    count: 1,
+    summary: 'Consultas de ventas por producto, mes y resumen general.',
+    concept: 'Comprueba que las consultas de reportes devuelvan estructuras válidas y totales no nulos.',
+    checks: [
+      'Devuelve datos por producto.',
+      'Devuelve al menos un período mensual.',
+      'Entrega pedidos cerrados y total recaudado sin valores nulos.'
+    ],
+    methods: ['consultasDeReporteDevuelvenResultadosValidos'],
+    snippetKey: 'reporteDAOImplIT'
+  },
+  {
+    id: 'dedicatedDatabaseExtension',
+    name: 'DedicatedDatabaseExtension.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/support/DedicatedDatabaseExtension.java',
+    group: 'safety',
+    groupLabel: 'Guardrail',
+    area: 'Seguridad de datos',
+    count: 0,
+    summary: 'Bloqueo preventivo contra una URL de base incorrecta.',
+    concept: 'No agrega casos @Test. Es una extensión JUnit 5 que corre antes de cualquier integración y exige la base restomanager_test.',
+    checks: [
+      'Lee db.url antes de abrir conexiones.',
+      'Acepta solo una URL que termine en restomanager_test.',
+      'Interrumpe la suite con IllegalStateException si la protección falla.'
+    ],
+    methods: [],
+    snippetKey: 'dedicatedDatabaseExtension'
+  }
+];
+
+// Extractos breves del codigo real. Se muestran para explicar la idea, no como una copia completa de cada clase.
+const TEST_CODE_SNIPPETS = {
+  modelosTest: {
+    name: 'ModelosTest.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/model/ModelosTest.java',
+    language: 'java',
+    desc: 'Prueba el dominio en memoria y compara dinero con BigDecimal.',
+    code: `@Test
+void detalleRecalculaSubtotalAlCambiarCantidadOPrecio() {
+    DetallePedido detalle = new DetallePedido();
+    detalle.setPrecioUnitario(new BigDecimal("125.50"));
+    detalle.setCantidad(3);
+
+    assertEquals(0, new BigDecimal("376.50")
+            .compareTo(detalle.getSubtotal()));
+}`
+  },
+  productoServiceTest: {
+    name: 'ProductoServiceTest.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/service/ProductoServiceTest.java',
+    language: 'java',
+    desc: 'Aísla ProductoService y evita consultas reales con un mock del DAO.',
+    code: `@Test
+void filtraCategoriaSinDistinguirMayusculasYSoloDisponibles() {
+    when(dao.getProductos()).thenReturn(
+            List.of(disponible, noDisponible, otraCategoria));
+
+    List<Producto> resultado =
+            service.obtenerPorCategoria("  HAMBURGUESAS ");
+
+    assertEquals(List.of(disponible), resultado);
+}`
+  },
+  mesaServiceTest: {
+    name: 'MesaServiceTest.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/service/MesaServiceTest.java',
+    language: 'java',
+    desc: 'Comprueba una transicion invalida y la ausencia de escritura en el DAO.',
+    code: `@Test
+void cambiarEstadoRechazaTransicionInvalida() {
+    when(mesaDAO.getMesaPorId(1))
+            .thenReturn(mesa(1, 1, EstadoMesa.OCUPADA));
+
+    assertEquals(
+            "Transicion de estado no permitida: OCUPADA -> RESERVADA",
+            service.cambiarEstado(1, EstadoMesa.RESERVADA));
+
+    verify(mesaDAO, never()).cambiarEstado(anyInt(), any());
+}`
+  },
+  pedidoServiceTest: {
+    name: 'PedidoServiceTest.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/service/PedidoServiceTest.java',
+    language: 'java',
+    desc: 'Usa stubbing, aserciones y verify para proteger la creación de pedidos.',
+    code: `@Test
+void crearPedidoPropagaErrorDeStockSinPersistir() {
+    when(mesaService.obtenerPorId(1))
+            .thenReturn(mesa(1, EstadoMesa.LIBRE));
+    when(productoService.validarStockDisponible(1, 2))
+            .thenReturn("Stock insuficiente");
+
+    assertEquals("Stock insuficiente", service.crearPedido(
+            mesa(1, EstadoMesa.LIBRE), usuario(1),
+            List.of(detalle(producto(1, 1), 2))));
+
+    verify(pedidoDAO, never()).Insertar(any(), anyList());
+}`
+  },
+  usuarioServiceTest: {
+    name: 'UsuarioServiceTest.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/service/UsuarioServiceTest.java',
+    language: 'java',
+    desc: 'Valida entradas antes de persistir y normaliza el usuario del login.',
+    code: `@Test
+void iniciarSesionValidaVaciosYNormalizaUsuario() {
+    assertNull(service.iniciarSesion(" ", "clave"));
+    verifyNoInteractions(dao);
+
+    Usuario esperado = usuarioValido();
+    when(dao.autenticar("usuario", "secreto"))
+            .thenReturn(esperado);
+
+    assertSame(esperado,
+            service.iniciarSesion(" usuario ", "secreto"));
+}`
+  },
+  reporteServiceTest: {
+    name: 'ReporteServiceTest.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/service/ReporteServiceTest.java',
+    language: 'java',
+    desc: 'Comprueba delegacion y la identidad de las instancias de ServicioFactory.',
+    code: `@Test
+void reporteServiceDelegaSinAlterarResultados() {
+    ReporteDAO dao = mock(ReporteDAO.class);
+    ReporteService service = new ReporteService(dao);
+    List<VentaPorMesDTO> meses = List.of(new VentaPorMesDTO());
+    when(dao.ventasPorMes()).thenReturn(meses);
+
+    assertSame(meses, service.ventasPorMes());
+}`
+  },
+  controllersTest: {
+    name: 'ControllersTest.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/controller/ControllersTest.java',
+    language: 'java',
+    desc: 'Verifica que los controladores sean un puente fino hacia los servicios.',
+    code: `@Test
+void productoControllerDelegaTodasLasOperaciones() {
+    ProductoService service = mock(ProductoService.class);
+    ProductoController controller = new ProductoController(service);
+    List<Producto> productos = List.of(new Producto());
+    when(service.obtenerTodos()).thenReturn(productos);
+
+    assertSame(productos, controller.listar());
+}`
+  },
+  productoDAOImplIT: {
+    name: 'ProductoDAOImplIT.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/dao/ProductoDAOImplIT.java',
+    language: 'java',
+    desc: 'Inserta, relee y limpia un producto en la base dedicada.',
+    code: `@Test
+void insertar_productoValido_debePoderseLeerPorId() {
+    Producto producto = crearProductoPrueba("TestProducto_LeerPorId");
+
+    dao.insertar(producto);
+    productoInsertadoId = producto.getIdProducto();
+
+    Producto leido = dao.getProductoPorId(productoInsertadoId);
+
+    assertNotNull(leido);
+    assertEquals("TestProducto_LeerPorId", leido.getNombre());
+}`
+  },
+  pedidoDAOImplIT: {
+    name: 'PedidoDAOImplIT.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/dao/PedidoDAOImplIT.java',
+    language: 'java',
+    desc: 'Valida la persistencia del pedido y sus detalles con ID generado.',
+    code: `@Test
+void insertar_pedidoConDetalles_debeCrearPedidoYDetalles() {
+    Pedido pedido = crearPedidoPrueba();
+    List<DetallePedido> detalles =
+            crearDetallesPrueba(1, new BigDecimal("100.00"));
+    pedido.setTotal(new BigDecimal("100.00"));
+
+    String resultado = dao.Insertar(pedido, detalles);
+
+    assertTrue(resultado.toLowerCase().contains("correctamente"));
+    pedidoInsertadoId = buscarUltimoPedidoAbiertoDeMesa(1);
+    assertNotNull(pedidoInsertadoId);
+}`
+  },
+  mesaDAOImplIT: {
+    name: 'MesaDAOImplIT.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/dao/MesaDAOImplIT.java',
+    language: 'java',
+    desc: 'Comprueba una alta real y el estado leído después del INSERT.',
+    code: `@Test
+void nuevaMesa_mesaValida_debeInsertarYLeer() {
+    Mesa mesa = crearMesaPrueba(9990, 4);
+
+    String resultado = dao.nuevaMesa(mesa);
+    Mesa insertada = buscarMesaPorNumero(9990);
+
+    assertTrue(resultado.toLowerCase().contains("agrego"));
+    assertNotNull(insertada);
+    assertEquals(EstadoMesa.LIBRE, insertada.getEstado());
+    mesaInsertadaId = insertada.getIdMesa();
+}`
+  },
+  conexionDBIT: {
+    name: 'ConexionDBIT.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/util/ConexionDBIT.java',
+    language: 'java',
+    desc: 'Recorre la conexión y el flujo completo usando servicios reales.',
+    code: `@Test
+public void testDatabaseConnection() {
+    ConexionDB conexion = ConexionDB.getInstance();
+
+    assertNotNull(conexion);
+    assertTrue(conexion.testConnection());
+}
+
+@Test
+public void testCompleteOrderFlow() {
+    MesaService mesaService = ServicioFactory.getMesaService();
+    PedidoService pedidoService = ServicioFactory.getPedidoService();
+    ProductoService productoService = ServicioFactory.getProductoService();
+
+    Producto producto = productoService.obtenerPorId(3);
+    int originalStock = producto.getStock();
+    // crear pedido, agregar item y cerrar
+    assertEquals(originalStock - 3,
+            productoService.obtenerPorId(3).getStock());
+}`
+  },
+  categoriaDAOImplIT: {
+    name: 'CategoriaDAOImplIT.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/dao/CategoriaDAOImplIT.java',
+    language: 'java',
+    desc: 'Comprueba que las categorías activas lleguen completas desde JDBC.',
+    code: `@Test
+void getCategoriasDevuelveCategoriasActivasCompletas() {
+    List<Categoria> categorias =
+            new CategoriaDAOImpl().getCategorias();
+
+    assertFalse(categorias.isEmpty());
+    assertTrue(categorias.stream().allMatch(Categoria::isActiva));
+    assertTrue(categorias.stream().allMatch(
+            c -> c.getIdCategoria() != null && c.getNombre() != null));
+}`
+  },
+  usuarioDAOImplIT: {
+    name: 'UsuarioDAOImplIT.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/dao/UsuarioDAOImplIT.java',
+    language: 'java',
+    desc: 'Confirma el flujo CRUD y el rechazo de credenciales incorrectas o inactivas.',
+    code: `@Test
+void flujoCrudYAutenticacionUsaHashSha256() {
+    Usuario usuario = usuarioTemporal();
+
+    assertEquals("Usuario insertado correctamente", dao.insertar(usuario));
+    usuarioCreadoId = usuario.getIdUsuario();
+    assertNotNull(dao.autenticar(usuario.getUsuario(), "secreto123"));
+    assertNull(dao.autenticar(usuario.getUsuario(), "incorrecta"));
+
+    assertEquals("Usuario desactivado correctamente",
+            dao.desactivar(usuarioCreadoId));
+}`
+  },
+  reporteDAOImplIT: {
+    name: 'ReporteDAOImplIT.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/dao/ReporteDAOImplIT.java',
+    language: 'java',
+    desc: 'Valida la forma mínima de los resultados de las consultas de reporte.',
+    code: `@Test
+void consultasDeReporteDevuelvenResultadosValidos() {
+    ReporteDAOImpl dao = new ReporteDAOImpl();
+
+    assertNotNull(dao.ventasPorProducto());
+    assertFalse(dao.ventasPorMes().isEmpty());
+
+    ResumenGeneralDTO resumen = dao.resumenGeneral();
+    assertNotNull(resumen);
+    assertTrue(resumen.getPedidosCerrados() >= 0);
+    assertNotNull(resumen.getTotalRecaudado());
+}`
+  },
+  dedicatedDatabaseExtension: {
+    name: 'DedicatedDatabaseExtension.java',
+    path: 'Backend/src/test/java/com/restaurant/backend/support/DedicatedDatabaseExtension.java',
+    language: 'java',
+    desc: 'Frena la suite antes de abrir conexiones si db.url no apunta a restomanager_test.',
+    code: `@Override
+public void beforeAll(ExtensionContext context) {
+    String url = System.getProperty("db.url", "");
+
+    if (!url.matches("(?i).*[/:]restomanager_test(?:[?;].*)?$")) {
+        throw new IllegalStateException(
+                "Las integraciones requieren -Ddb.url "
+                + "apuntando explícitamente a restomanager_test");
+    }
+}`
+  }
+};
+
+const TEST_BASELINE_OUTPUT = [
+  '$ resumen de ejecución del Backend',
+  '[Surefire] 7 clases unitarias | 44 tests | 0 fallos',
+  '[Failsafe] 7 clases de integración | 39 tests | 0 fallos',
+  '[JaCoCo] 77,5% líneas | 56,6% ramas',
+  '[INFO] BUILD SUCCESS | 83 tests verificados'
+];
+
+const SCHEMA_SQL_SNIPPET = {
+  name: 'schema.sql',
+  path: 'Backend/src/main/resources/schema.sql',
+  language: 'sql',
+  desc: 'Esquema relacional real del backend. Define las siete tablas, sus claves foráneas, índices y vistas de reportes.',
+  code: `CREATE TABLE pedidos (
+    id_pedido INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    id_mesa INT UNSIGNED NOT NULL,
+    id_usuario INT UNSIGNED NOT NULL,
+    estado ENUM('ABIERTO','EN_COCINA','LISTO',
+                'CERRADO','CANCELADO') NOT NULL,
+    total DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+    FOREIGN KEY (id_mesa) REFERENCES mesas(id_mesa),
+    FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario)
+);
+
+CREATE TABLE detalle_pedido (
+    id_detalle INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    id_pedido INT UNSIGNED NOT NULL,
+    id_producto INT UNSIGNED NOT NULL,
+    cantidad INT UNSIGNED NOT NULL,
+    subtotal DECIMAL(10, 2) NOT NULL,
+    FOREIGN KEY (id_pedido) REFERENCES pedidos(id_pedido)
+        ON DELETE CASCADE,
+    FOREIGN KEY (id_producto) REFERENCES productos(id_producto)
+);`
+};
+
+const ALL_CODE_SNIPPETS = { ...CODE_SNIPPETS, schemaSql: SCHEMA_SQL_SNIPPET, ...TEST_CODE_SNIPPETS };
+
+const ER_ENTITIES = [
+  {
+    id: 'roles',
+    title: 'ROLES',
+    position: 'roles',
+    description: 'Catálogo de permisos. Un rol puede asignarse a muchos usuarios.',
+    fields: [{ name: 'id_rol', kind: 'PK' }, { name: 'nombre' }]
+  },
+  {
+    id: 'usuarios',
+    title: 'USUARIOS',
+    position: 'usuarios',
+    description: 'Personas que operan el sistema. Cada usuario pertenece a un rol y puede tomar pedidos.',
+    fields: [
+      { name: 'id_usuario', kind: 'PK' },
+      { name: 'usuario' },
+      { name: 'id_rol', kind: 'FK' },
+      { name: 'activo' }
+    ]
+  },
+  {
+    id: 'categorias',
+    title: 'CATEGORIAS',
+    position: 'categorias',
+    description: 'Agrupa los productos que aparecen en el menú.',
+    fields: [
+      { name: 'id_categoria', kind: 'PK' },
+      { name: 'nombre' },
+      { name: 'activa' }
+    ]
+  },
+  {
+    id: 'productos',
+    title: 'PRODUCTOS',
+    position: 'productos',
+    description: 'Catálogo vendible. Conserva precio, stock y la categoría del producto.',
+    fields: [
+      { name: 'id_producto', kind: 'PK' },
+      { name: 'nombre' },
+      { name: 'precio' },
+      { name: 'id_categoria', kind: 'FK' },
+      { name: 'stock' }
+    ]
+  },
+  {
+    id: 'mesas',
+    title: 'MESAS',
+    position: 'mesas',
+    description: 'Representa las mesas físicas y su estado operativo actual.',
+    fields: [
+      { name: 'id_mesa', kind: 'PK' },
+      { name: 'numero' },
+      { name: 'capacidad' },
+      { name: 'estado' }
+    ]
+  },
+  {
+    id: 'pedidos',
+    title: 'PEDIDOS',
+    position: 'pedidos',
+    description: 'Cabecera de la comanda. Une una mesa, un usuario y su estado de preparación.',
+    fields: [
+      { name: 'id_pedido', kind: 'PK' },
+      { name: 'id_mesa', kind: 'FK' },
+      { name: 'id_usuario', kind: 'FK' },
+      { name: 'estado' },
+      { name: 'total' }
+    ]
+  },
+  {
+    id: 'detalle_pedido',
+    title: 'DETALLE_PEDIDO',
+    position: 'detalle',
+    description: 'Líneas de la comanda. Resuelve la relación entre pedidos y productos.',
+    fields: [
+      { name: 'id_detalle', kind: 'PK' },
+      { name: 'id_pedido', kind: 'FK' },
+      { name: 'id_producto', kind: 'FK' },
+      { name: 'cantidad' },
+      { name: 'subtotal' }
+    ]
+  }
+];
+
+const ER_RELATIONSHIPS = [
+  {
+    id: 'roles-usuarios',
+    from: 'roles',
+    to: 'usuarios',
+    label: 'ROLES 1:N USUARIOS',
+    mapping: 'usuarios.id_rol -> roles.id_rol',
+    description: 'Un rol puede tener muchos usuarios. Cada usuario guarda una sola referencia a su rol.'
+  },
+  {
+    id: 'mesas-pedidos',
+    from: 'mesas',
+    to: 'pedidos',
+    label: 'MESAS 1:N PEDIDOS',
+    mapping: 'pedidos.id_mesa -> mesas.id_mesa',
+    description: 'Una mesa puede acumular pedidos a lo largo del tiempo. Cada pedido pertenece a una mesa.'
+  },
+  {
+    id: 'usuarios-pedidos',
+    from: 'usuarios',
+    to: 'pedidos',
+    label: 'USUARIOS 1:N PEDIDOS',
+    mapping: 'pedidos.id_usuario -> usuarios.id_usuario',
+    description: 'Un usuario puede tomar muchos pedidos. La FK identifica quién registró cada comanda.'
+  },
+  {
+    id: 'categorias-productos',
+    from: 'categorias',
+    to: 'productos',
+    label: 'CATEGORIAS 1:N PRODUCTOS',
+    mapping: 'productos.id_categoria -> categorias.id_categoria',
+    description: 'Una categoría reúne muchos productos. El producto conserva la categoría para filtrar el menú.'
+  },
+  {
+    id: 'pedidos-detalle',
+    from: 'pedidos',
+    to: 'detalle_pedido',
+    label: 'PEDIDOS 1:N DETALLE',
+    mapping: 'detalle_pedido.id_pedido -> pedidos.id_pedido',
+    description: 'Un pedido tiene una o más líneas. Si se elimina la cabecera, ON DELETE CASCADE elimina sus detalles.'
+  },
+  {
+    id: 'productos-detalle',
+    from: 'productos',
+    to: 'detalle_pedido',
+    label: 'PRODUCTOS 1:N DETALLE',
+    mapping: 'detalle_pedido.id_producto -> productos.id_producto',
+    description: 'Un producto puede aparecer en muchos detalles. El detalle guarda cantidad y subtotal de esa venta.'
+  }
+];
+
+function EntityRelationshipDiagram({ onOpenSchema }) {
+  const [selectedEntityId, setSelectedEntityId] = useState('pedidos');
+  const [selectedRelationId, setSelectedRelationId] = useState(null);
+
+  const selectedEntity = ER_ENTITIES.find(entity => entity.id === selectedEntityId) || ER_ENTITIES[0];
+  const selectedRelation = ER_RELATIONSHIPS.find(relation => relation.id === selectedRelationId);
+  const getEntity = (id) => ER_ENTITIES.find(entity => entity.id === id);
+
+  const selectEntity = (entityId) => {
+    setSelectedEntityId(entityId);
+    setSelectedRelationId(null);
+  };
+
+  const selectRelation = (relationId) => {
+    setSelectedRelationId(relationId);
+  };
+
+  const relationIsActive = (relation) => {
+    if (selectedRelation) return relation.id === selectedRelation.id;
+    return relation.from === selectedEntityId || relation.to === selectedEntityId;
+  };
+
+  const entityIsActive = (entity) => {
+    if (selectedRelation) {
+      return selectedRelation.from === entity.id || selectedRelation.to === entity.id;
+    }
+    return selectedEntityId === entity.id;
+  };
+
+  return (
+    <section className="er-section" aria-labelledby="er-section-title">
+      <div className="er-section-header">
+        <div>
+          <span className="er-kicker">Base relacional</span>
+          <h3 id="er-section-title">Modelo Entidad-Relación</h3>
+          <p>El esquema explica cómo el restaurante pasa de una mesa y un usuario a un pedido con productos trazables.</p>
+        </div>
+        <button type="button" className="er-schema-button" onClick={onOpenSchema}>
+          <FileCode />
+          <span>Abrir schema.sql</span>
+        </button>
+      </div>
+
+      <div className="er-meta-strip" aria-label="Resumen del modelo">
+        <span><strong>7</strong> tablas</span>
+        <span><strong>6</strong> relaciones 1:N</span>
+        <span><strong>3</strong> vistas SQL</span>
+        <span className="er-meta-note">Fuente: Backend/src/main/resources/schema.sql</span>
+      </div>
+
+      <div className="er-legend" aria-label="Leyenda del diagrama">
+        <span><b className="er-legend-key er-legend-pk">PK</b> clave primaria</span>
+        <span><b className="er-legend-key er-legend-fk">FK</b> clave foránea</span>
+        <span><b className="er-legend-arrow">1:N</b> uno a muchos</span>
+      </div>
+
+      <div className="er-main-grid">
+        <div className="er-diagram-canvas" aria-label="Diagrama interactivo de tablas y relaciones">
+          <svg className="er-connector-layer" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+            <defs>
+              <marker id="er-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                <path className="er-arrowhead" d="M 0 0 L 10 5 L 0 10 z" />
+              </marker>
+            </defs>
+            <path className={`er-connector ${relationIsActive(ER_RELATIONSHIPS[0]) ? 'is-active' : ''}`} d="M 16.5 23 V 31" markerEnd="url(#er-arrow)" />
+            <path className={`er-connector ${relationIsActive(ER_RELATIONSHIPS[1]) ? 'is-active' : ''}`} d="M 49.5 23 V 31" markerEnd="url(#er-arrow)" />
+            <path className={`er-connector ${relationIsActive(ER_RELATIONSHIPS[2]) ? 'is-active' : ''}`} d="M 29.5 44 H 36.5" markerEnd="url(#er-arrow)" />
+            <path className={`er-connector ${relationIsActive(ER_RELATIONSHIPS[3]) ? 'is-active' : ''}`} d="M 29.5 82 H 36.5" markerEnd="url(#er-arrow)" />
+            <path className={`er-connector ${relationIsActive(ER_RELATIONSHIPS[4]) ? 'is-active' : ''}`} d="M 62.5 46 C 67 49, 69 54, 72 57" markerEnd="url(#er-arrow)" />
+            <path className={`er-connector ${relationIsActive(ER_RELATIONSHIPS[5]) ? 'is-active' : ''}`} d="M 62.5 82 C 67 78, 69 72, 72 68" markerEnd="url(#er-arrow)" />
+            <text className="er-connector-label" x="18" y="28">1:N</text>
+            <text className="er-connector-label" x="51" y="28">1:N</text>
+            <text className="er-connector-label" x="33" y="42">1:N</text>
+            <text className="er-connector-label" x="33" y="80">1:N</text>
+            <text className="er-connector-label" x="66" y="52">1:N</text>
+            <text className="er-connector-label" x="66" y="76">1:N</text>
+          </svg>
+
+          <div className="er-entity-layer">
+            {ER_ENTITIES.map(entity => (
+              <button
+                key={entity.id}
+                type="button"
+                className={`er-entity er-entity-${entity.position} ${entityIsActive(entity) ? 'is-active' : ''}`}
+                onClick={() => selectEntity(entity.id)}
+                aria-pressed={entityIsActive(entity)}
+                aria-label={`Explorar tabla ${entity.title}`}
+              >
+                <span className="er-entity-header">
+                  <span>{entity.title}</span>
+                  <Database />
+                </span>
+                <span className="er-entity-caption">Campos clave</span>
+                <span className="er-field-list">
+                  {entity.fields.map(field => (
+                    <span className="er-field" key={field.name}>
+                      <span className={`er-field-key ${field.kind ? `is-${field.kind.toLowerCase()}` : ''}`}>{field.kind || 'campo'}</span>
+                      <code>{field.name}</code>
+                    </span>
+                  ))}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <span className="er-canvas-hint">Seleccioná una tabla para seguir su recorrido</span>
+        </div>
+
+        <aside className="er-explainer" aria-live="polite">
+          {selectedRelation ? (
+            <div className="er-detail-content">
+              <span className="er-detail-kicker">Relación 1:N</span>
+              <h4>{getEntity(selectedRelation.from).title} <ArrowRight /> {getEntity(selectedRelation.to).title}</h4>
+              <p>{selectedRelation.description}</p>
+              <div className="er-mapping">
+                <span>La FK se guarda en</span>
+                <code>{selectedRelation.mapping}</code>
+              </div>
+              <button type="button" className="er-detail-link" onClick={() => selectEntity(selectedRelation.to)}>
+                Explorar tabla hija <ChevronRight />
+              </button>
+            </div>
+          ) : (
+            <div className="er-detail-content">
+              <span className="er-detail-kicker">Tabla seleccionada</span>
+              <h4>{selectedEntity.title}</h4>
+              <p>{selectedEntity.description}</p>
+              <div className="er-detail-rule"></div>
+              <span className="er-detail-label">Cómo explicarla</span>
+              <p className="er-detail-short">Primero identificá su PK. Después seguí las FK para contar qué otras tablas dependen de ella.</p>
+              <button type="button" className="er-detail-link" onClick={() => selectRelation(ER_RELATIONSHIPS.find(relation => relation.from === selectedEntity.id || relation.to === selectedEntity.id)?.id)}>
+                Ver relaciones conectadas <ChevronRight />
+              </button>
+            </div>
+          )}
+        </aside>
+      </div>
+
+      <div className="er-relations-section">
+        <div className="er-relations-heading">
+          <div>
+            <h4>Relaciones que conviene explicar</h4>
+            <p>Elegí una conexión para ver la FK y el sentido de la dependencia.</p>
+          </div>
+          <span>Seleccionar para enfocar</span>
+        </div>
+        <div className="er-relation-grid">
+          {ER_RELATIONSHIPS.map(relation => (
+            <button
+              type="button"
+              key={relation.id}
+              className={`er-relation-card ${selectedRelationId === relation.id ? 'is-active' : ''}`}
+              onClick={() => selectRelation(relation.id)}
+              aria-pressed={selectedRelationId === relation.id}
+            >
+              <span>{relation.label}</span>
+              <ArrowRight />
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 // Flow stages metadata linking to images folder
 const PROJECT_FLOW_STAGES = [
@@ -972,6 +2233,27 @@ const PROJECT_FLOW_STAGES = [
     origin: 'Maven Central',
     desc: 'Framework para el desarrollo y ejecución de pruebas unitarias automatizadas. Valida el correcto funcionamiento de los DAOs y lógica transaccional de manera aislada.'
   },
+  mockito: {
+    name: 'mockito-junit-jupiter',
+    version: '5.23.0',
+    scope: 'test',
+    origin: 'Maven Central',
+    desc: 'Framework de mocking líder para aislar unidades de código bajo prueba. Permite simular dependencias (DAOs y servicios colaboradores), capturar parámetros con ArgumentCaptor y verificar interacciones sin base de datos.'
+  },
+  surefire: {
+    name: 'maven-surefire-plugin',
+    version: '3.5.4',
+    scope: 'plugin',
+    origin: 'Maven Plugins',
+    desc: 'Plugin de Maven que ejecuta la suite completa de pruebas unitarias (*Test.java) en la fase test del ciclo de compilación.'
+  },
+  failsafe: {
+    name: 'maven-failsafe-plugin',
+    version: '3.5.4',
+    scope: 'plugin',
+    origin: 'Maven Plugins',
+    desc: 'Plugin de Maven para ejecutar pruebas de integración (*IT.java) contra la base de datos de prueba TiDB Cloud bajo el perfil integration-tests.'
+  },
   backend: {
     name: 'com.restaurant:Backend',
     version: '1.0',
@@ -1010,11 +2292,6 @@ function App() {
   const [simStep, setSimStep] = useState(0);
   const [simFlow, setSimFlow] = useState('login'); // 'login', 'pedido', 'liberar'
   
-  // Interactive Console States
-  const [consoleLogs, setConsoleLogs] = useState([]);
-  const [isConsoleBuilding, setIsConsoleBuilding] = useState(false);
-  const [activeCommand, setActiveCommand] = useState('');
-
   // Flow Gallery States
   const [activeStage, setActiveStage] = useState('login');
   const [carouselIndex, setCarouselIndex] = useState(0);
@@ -1027,11 +2304,65 @@ function App() {
   const [buildStep, setBuildStep] = useState(-1);
   const [selectedDep, setSelectedDep] = useState(null);
 
-  // Auto scroll interactive console logs
-  useEffect(() => {
-    const el = document.getElementById('console-scroll-target');
-    if (el) el.scrollIntoView({ behavior: 'smooth' });
-  }, [consoleLogs]);
+  // Testing Tab States
+  const [activeTestCase, setActiveTestCase] = useState('pedidoServiceTest');
+  const [testFilter, setTestFilter] = useState('all');
+  const [testQuery, setTestQuery] = useState('');
+  const [testSuiteRunning, setTestSuiteRunning] = useState(false);
+  const [testSuiteOutput, setTestSuiteOutput] = useState(TEST_BASELINE_OUTPUT);
+
+  const runSimulatedTestSuite = () => {
+    if (testSuiteRunning) return;
+    setTestSuiteRunning(true);
+    setTestSuiteOutput([]);
+    const unitTests = TEST_CATALOG.filter(test => test.group === 'unit');
+    const integrationTests = TEST_CATALOG.filter(test => test.group === 'integration');
+    const lines = [
+      '[INFO] Simulación visual: no ejecuta Maven ni abre conexiones',
+      '$ mvn -pl Backend clean verify',
+      '[Surefire] Ejecutando pruebas unitarias',
+      ...unitTests.map(test => `[Surefire] ${test.name} -> ${test.count} tests PASSED`),
+      '[Surefire] Resultado: 44 tests, 0 fallos, 0 errores',
+      '$ mvn -pl Backend -Pintegration-tests clean verify',
+      '[Failsafe] Ejecutando pruebas de integración sobre restomanager_test',
+      ...integrationTests.map(test => `[Failsafe] ${test.name} -> ${test.count} tests PASSED`),
+      '[Failsafe] Resultado: 39 tests, 0 fallos, 0 errores',
+      '[JaCoCo] Cobertura combinada documentada: 77,5% líneas | 56,6% ramas',
+      '[INFO] BUILD SUCCESS | 83 tests verificados'
+    ];
+    let i = 0;
+    const interval = setInterval(() => {
+      if (i < lines.length) {
+        const nextLine = lines[i];
+        setTestSuiteOutput(prev => [...prev, nextLine]);
+        i++;
+      } else {
+        clearInterval(interval);
+        setTestSuiteRunning(false);
+      }
+    }, 80);
+  };
+
+  const changeTestFilter = (filter) => {
+    setTestFilter(filter);
+    const nextTests = filter === 'all'
+      ? TEST_CATALOG
+      : TEST_CATALOG.filter(test => test.group === filter);
+    if (!nextTests.some(test => test.id === activeTestCase)) {
+      setActiveTestCase(nextTests[0]?.id || 'pedidoServiceTest');
+    }
+  };
+
+  const normalizedTestQuery = testQuery.trim().toLowerCase();
+  const visibleTestCatalog = TEST_CATALOG.filter(test => {
+    const matchesFilter = testFilter === 'all' || test.group === testFilter;
+    const searchableText = [test.name, test.path, test.area, test.summary, ...test.methods]
+      .join(' ')
+      .toLowerCase();
+    return matchesFilter && (!normalizedTestQuery || searchableText.includes(normalizedTestQuery));
+  });
+  const selectedTest = TEST_CATALOG.find(test => test.id === activeTestCase) || TEST_CATALOG[0];
+  const selectedTestSnippet = TEST_CODE_SNIPPETS[selectedTest.snippetKey];
 
   // Handle flow steps in simulator
   const resetSimulator = (flowType) => {
@@ -1395,111 +2726,13 @@ public boolean desactivar(int idProducto) throws SQLException {
     ]
   };
 
-  // Simulate console compilation
-  const runConsoleCommand = (cmd) => {
-    if (isConsoleBuilding) return;
-    setIsConsoleBuilding(true);
-    setActiveCommand(cmd);
-    setConsoleLogs([]);
-
-    const logMessages = {
-      clean: [
-        'PS C:\\Users\\nicot\\Desktop\\Programacion2-Final> & "F:\\Apache NetBeans\\java\\maven\\bin\\mvn.cmd" clean',
-        '[INFO] Scanning for projects...',
-        '[INFO] Reactor Build Order:',
-        '[INFO]   restaurant-parent [pom]',
-        '[INFO]   Backend [jar]',
-        '[INFO]   GUI [jar]',
-        '[INFO] --- clean:3.2.0:clean (default-clean) @ restaurant-parent ---',
-        '[INFO] --- clean:3.2.0:clean (default-clean) @ Backend ---',
-        '[INFO] Deleting C:\\Users\\nicot\\Desktop\\Programacion2-Final\\Backend\\target',
-        '[INFO] --- clean:3.2.0:clean (default-clean) @ GUI ---',
-        '[INFO] Deleting C:\\Users\\nicot\\Desktop\\Programacion2-Final\\GUI\\target',
-        '[INFO] ------------------------------------------------------------------------',
-        '[INFO] BUILD SUCCESS',
-        '[INFO] Total time: 1.450 s',
-        '[INFO] Finished at: 2026-06-17T15:01:00-03:00',
-        'PS C:\\Users\\nicot\\Desktop\\Programacion2-Final>'
-      ],
-      package: [
-        'PS C:\\Users\\nicot\\Desktop\\Programacion2-Final> & "F:\\Apache NetBeans\\java\\maven\\bin\\mvn.cmd" clean package -DskipTests',
-        '[INFO] Scanning for projects...',
-        '[INFO] Reactor Build Order:',
-        '[INFO]   restaurant-parent [pom]',
-        '[INFO]   Backend [jar]',
-        '[INFO]   GUI [jar]',
-        '[INFO] --- clean:3.2.0:clean (default-clean) @ restaurant-parent ---',
-        '[INFO] --- resources:3.4.0:resources (default-resources) @ Backend ---',
-        '[INFO] Copying 4 resources from src\\main\\resources to target\\classes',
-        '[INFO] --- compiler:3.15.0:compile (default-compile) @ Backend ---',
-        '[INFO] Compiling 37 source files with javac [debug release 17] to target\\classes',
-        '[INFO] --- jar:3.5.0:jar (default-jar) @ Backend ---',
-        '[INFO] Building jar: C:\\Users\\nicot\\Desktop\\Programacion2-Final\\Backend\\target\\Backend-1.0.jar',
-        '[INFO] --- resources:3.4.0:resources (default-resources) @ GUI ---',
-        '[INFO] Copying 19 resources from src to target\\classes',
-        '[INFO] --- compiler:3.11.0:compile (default-compile) @ GUI ---',
-        '[INFO] Compiling 15 source files with javac [debug release 17] to target\\classes',
-        '[INFO] --- jar:3.3.0:jar (default-jar) @ GUI ---',
-        '[INFO] Building jar: C:\\Users\\nicot\\Desktop\\Programacion2-Final\\GUI\\target\\RestoManager-GUI.jar',
-        '[INFO] --- maven-assembly-plugin:3.6.0:single (make-assembly) @ GUI ---',
-        '[INFO] Reading assembly descriptor: src/assembly/dep.xml',
-        '[INFO] Unpacking and merging: C:\\Users\\nicot\\Desktop\\Programacion2-Final\\Backend\\target\\Backend-1.0.jar',
-        '[INFO] Unpacking and merging system scopes: AbsoluteLayout.jar, LGoodDatePicker.jar, jfreechart-1.5.4.jar',
-        '[INFO] Unpacking and merging remote dependencies: HikariCP-5.1.0.jar, mysql-connector-j-9.1.0.jar, slf4j-api-2.0.13.jar',
-        '[INFO] Building jar: C:\\Users\\nicot\\Desktop\\Programacion2-Final\\GUI\\target\\RestoManager.jar',
-        '[WARNING] Replacing pre-existing project main-artifact with assembly file.',
-        '[INFO] ------------------------------------------------------------------------',
-        '[INFO] Reactor Summary for restaurant-parent 1.0:',
-        '[INFO]   restaurant-parent .................................. SUCCESS [ 0.160 s]',
-        '[INFO]   Backend ............................................ SUCCESS [ 2.450 s]',
-        '[INFO]   GUI ................................................ SUCCESS [ 2.720 s]',
-        '[INFO] ------------------------------------------------------------------------',
-        '[INFO] BUILD SUCCESS',
-        '[INFO] Total time: 5.330 s',
-        'PS C:\\Users\\nicot\\Desktop\\Programacion2-Final>'
-      ],
-      run: [
-        'PS C:\\Users\\nicot\\Desktop\\Programacion2-Final> java -jar GUI\\target\\RestoManager.jar',
-        '[DEBUG] Loading configuration properties from embedded db.properties...',
-        '[INFO] com.zaxxer.hikari.HikariDataSource - RestoManager-Pool - Starting...',
-        '[INFO] com.zaxxer.hikari.pool.HikariPool - RestoManager-Pool - Added connection com.mysql.cj.jdbc.ConnectionImpl@3da2841a',
-        '[INFO] com.zaxxer.hikari.HikariDataSource - RestoManager-Pool - Start completed.',
-        '[DEBUG] ConexionDB - Successfully updated SQL view vw_ventas_por_producto.',
-        '[INFO] Vistas.Login - Launching Swing desktop interface...',
-        '[INFO] AWT-EventQueue-0 - Rendered Main Login Frame.',
-        'Email: nicolas@nicolas',
-        'Usuario: nicolas',
-        'Password: ******',
-        '[INFO] Usuario nicolas autenticado con rol ADMINISTRADOR.',
-        '[DEBUG] AsyncDataLoader - Fetching active orders for Mesa 1 in background...',
-        '[DEBUG] AsyncDataLoader - Rendered mesas grid with real-time states.',
-        '[INFO] Application running successfully...'
-      ]
-    };
-
-    let currentLogIndex = 0;
-    const interval = setInterval(() => {
-      if (currentLogIndex < logMessages[cmd].length) {
-        setConsoleLogs(prev => [...prev, logMessages[cmd][currentLogIndex]]);
-        currentLogIndex++;
-      } else {
-        clearInterval(interval);
-        setIsConsoleBuilding(false);
-      }
-    }, 150);
-  };
-
-  // ── PDF REPORT GENERATOR ─────────────────────────────────────────────────
-  // Full implementation lives in src/generarInforme.js
-  const handleGenerarInforme = () => { generarInforme(); };
-
-  return (
-    <div className="min-h-screen flex bg-page text-white" style={{ backgroundColor: 'var(--bg-page)' }}>
+ return (
+    <div className="app-shell min-h-screen flex bg-page text-white" style={{ backgroundColor: 'var(--bg-page)' }}>
       {/* Sidebar Navigation */}
-      <aside className="w-80 flex flex-col border-r border-border" style={{ backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border)' }}>
+      <aside className="app-sidebar w-80 flex flex-col border-r border-border shrink-0" style={{ backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border)' }}>
         {/* Brand Header */}
         <div className="p-6 border-b border-border flex items-center gap-3" style={{ borderColor: 'var(--border)' }}>
-          <div className="w-10 h-10 rounded-xl bg-primary-glow flex items-center justify-center border border-primary/30" style={{ backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.3)' }}>
+          <div className="w-10 h-10 rounded-xl bg-primary-glow flex items-center justify-center border border-primary/30" style={{ backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.3)' }}>
             <Sparkles className="w-5 h-5 text-primary" style={{ color: 'var(--primary)' }} />
           </div>
           <div>
@@ -1510,10 +2743,10 @@ public boolean desactivar(int idProducto) throws SQLException {
 
         {/* Navigation Tabs */}
         <nav className="flex-1 flex flex-col px-4 py-6 space-y-1">
-          <button 
+          <button
             onClick={() => setActiveTab('inicio')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-medium transition-all duration-200 ${activeTab === 'inicio' ? 'bg-primary text-black font-semibold' : 'text-secondary hover:bg-card-hover hover:text-white'}`}
-            style={activeTab === 'inicio' ? { backgroundColor: 'var(--primary)', color: '#000' } : {}}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-medium transition-all duration-200 ${activeTab === 'inicio' ? 'bg-primary text-white font-semibold' : 'text-secondary hover:bg-card-hover hover:text-primary'}`}
+            style={activeTab === 'inicio' ? { backgroundColor: 'var(--primary)', color: '#ffffff' } : {}}
           >
             <BookOpen className="w-5 h-5" />
             <span>Resumen del Proyecto</span>
@@ -1521,21 +2754,30 @@ public boolean desactivar(int idProducto) throws SQLException {
 
           <button 
             onClick={() => setActiveTab('arquitectura')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-medium transition-all duration-200 ${activeTab === 'arquitectura' ? 'bg-primary text-black font-semibold' : 'text-secondary hover:bg-card-hover hover:text-white'}`}
-            style={activeTab === 'arquitectura' ? { backgroundColor: 'var(--primary)', color: '#000' } : {}}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-medium transition-all duration-200 ${activeTab === 'arquitectura' ? 'bg-primary text-white font-semibold' : 'text-secondary hover:bg-card-hover hover:text-primary'}`}
+            style={activeTab === 'arquitectura' ? { backgroundColor: 'var(--primary)', color: '#ffffff' } : {}}
           >
             <Layers className="w-5 h-5" />
             <span>Mapa de Arquitectura</span>
           </button>
 
           <button 
+            onClick={() => setActiveTab('testing')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-medium transition-all duration-200 ${activeTab === 'testing' ? 'bg-primary text-white font-semibold' : 'text-secondary hover:bg-card-hover hover:text-primary'}`}
+            style={activeTab === 'testing' ? { backgroundColor: 'var(--primary)', color: '#ffffff' } : {}}
+          >
+            <CheckCircle2 className="w-5 h-5" />
+            <span>Estrategia de Tests</span>
+          </button>
+
+          <button
             onClick={() => {
               setActiveTab('flujo');
               setActiveStage('login');
               setCarouselIndex(0);
             }}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-medium transition-all duration-200 ${activeTab === 'flujo' ? 'bg-primary text-black font-semibold' : 'text-secondary hover:bg-card-hover hover:text-white'}`}
-            style={activeTab === 'flujo' ? { backgroundColor: 'var(--primary)', color: '#000' } : {}}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-medium transition-all duration-200 ${activeTab === 'flujo' ? 'bg-primary text-white font-semibold' : 'text-secondary hover:bg-card-hover hover:text-primary'}`}
+            style={activeTab === 'flujo' ? { backgroundColor: 'var(--primary)', color: '#ffffff' } : {}}
           >
             <Monitor className="w-5 h-5" />
             <span>Flujo y Pantallas</span>
@@ -1543,8 +2785,8 @@ public boolean desactivar(int idProducto) throws SQLException {
 
           <button 
             onClick={() => setActiveTab('ide')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-medium transition-all duration-200 ${activeTab === 'ide' ? 'bg-primary text-black font-semibold' : 'text-secondary hover:bg-card-hover hover:text-white'}`}
-            style={activeTab === 'ide' ? { backgroundColor: 'var(--primary)', color: '#000' } : {}}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-medium transition-all duration-200 ${activeTab === 'ide' ? 'bg-primary text-white font-semibold' : 'text-secondary hover:bg-card-hover hover:text-primary'}`}
+            style={activeTab === 'ide' ? { backgroundColor: 'var(--primary)', color: '#ffffff' } : {}}
           >
             <Code2 className="w-5 h-5" />
             <span>Explorador de Código</span>
@@ -1552,8 +2794,8 @@ public boolean desactivar(int idProducto) throws SQLException {
 
           <button 
             onClick={() => setActiveTab('simulador')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-medium transition-all duration-200 ${activeTab === 'simulador' ? 'bg-primary text-black font-semibold' : 'text-secondary hover:bg-card-hover hover:text-white'}`}
-            style={activeTab === 'simulador' ? { backgroundColor: 'var(--primary)', color: '#000' } : {}}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-medium transition-all duration-200 ${activeTab === 'simulador' ? 'bg-primary text-white font-semibold' : 'text-secondary hover:bg-card-hover hover:text-primary'}`}
+            style={activeTab === 'simulador' ? { backgroundColor: 'var(--primary)', color: '#ffffff' } : {}}
           >
             <Activity className="w-5 h-5" />
             <span>Simulador de Flujos</span>
@@ -1561,19 +2803,12 @@ public boolean desactivar(int idProducto) throws SQLException {
 
           <button 
             onClick={generarInforme}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-bold transition-all duration-300 text-white mt-auto hover:scale-[1.02] active:scale-[0.98]"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-bold transition-all duration-200 text-white mt-auto hover:brightness-110 active:scale-[0.98]"
             style={{
-              background: 'linear-gradient(135deg, #f99b20 0%, #d85f0b 100%)',
-              boxShadow: '0 4px 14px rgba(249, 155, 32, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2)',
-              border: '1px solid rgba(249, 155, 32, 0.3)',
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.boxShadow = '0 6px 18px rgba(249, 155, 32, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.3)';
-              e.currentTarget.style.filter = 'brightness(1.08)';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.boxShadow = '0 4px 14px rgba(249, 155, 32, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2)';
-              e.currentTarget.style.filter = 'brightness(1)';
+              backgroundColor: 'var(--primary)',
+              color: '#ffffff',
+              border: '1px solid rgba(212, 0, 0, 0.3)',
+              boxShadow: '0 2px 6px rgba(212, 0, 0, 0.2)'
             }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -1589,15 +2824,15 @@ public boolean desactivar(int idProducto) throws SQLException {
         <div className="p-6 border-t border-border space-y-3" style={{ borderColor: 'var(--border)' }}>
           <div className="bg-card p-4 rounded-xl border border-border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
             <span className="inline-block text-[10px] uppercase font-bold tracking-wider text-primary bg-primary-glow px-2 py-0.5 rounded mb-1" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' }}>
-              Hotfix Aplicado
+              QA & Testing
             </span>
-            <p className="text-xs text-secondary font-medium" style={{ color: 'var(--text-secondary)' }}>Mesa liberación y classpath corregido.</p>
+            <p className="text-xs text-secondary font-medium" style={{ color: 'var(--text-secondary)' }}>83 tests: 44 unitarios y 39 de integración.</p>
           </div>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-h-screen overflow-y-auto p-10">
+      <main className="app-main flex-1 flex flex-col min-h-screen overflow-y-auto p-10">
         
         {/* HEADER SECTION */}
         <header className="mb-10 flex justify-between items-center">
@@ -1605,6 +2840,7 @@ public boolean desactivar(int idProducto) throws SQLException {
             <h2 className="text-3xl font-extrabold text-white tracking-tight" style={{ fontSize: '1.875rem' }}>
               {activeTab === 'inicio' && 'Descripción General de la Solución'}
               {activeTab === 'arquitectura' && 'Arquitectura de Software y Componentes'}
+              {activeTab === 'testing' && 'Estrategia, Arquitectura y Flujo de Tests'}
               {activeTab === 'flujo' && 'Recorrido y Flujo de Pantallas'}
               {activeTab === 'ide' && 'Explorador de Código Interactivo'}
               {activeTab === 'simulador' && 'Simulador Visual de Eventos'}
@@ -1612,6 +2848,7 @@ public boolean desactivar(int idProducto) throws SQLException {
             <p className="text-secondary mt-1" style={{ color: 'var(--text-secondary)' }}>
               {activeTab === 'inicio' && 'Proyecto final de Programación II estructurado en Java Desktop Multi-capas.'}
               {activeTab === 'arquitectura' && 'Interactúa con los módulos para ver sus responsabilidades y acoplamientos.'}
+              {activeTab === 'testing' && '83 tests en JUnit 5: reglas aisladas con Mockito e integración JDBC sobre una base dedicada.'}
               {activeTab === 'flujo' && 'Visualiza el ciclo de vida y los flujos del sistema con capturas y detalles técnicos.'}
               {activeTab === 'ide' && 'Inspecciona las clases de persistencia, concurrencia y los arreglos de código.'}
               {activeTab === 'simulador' && 'Simulación paso a paso del Event Dispatch Thread, SwingWorkers y llamadas SQL.'}
@@ -1631,7 +2868,7 @@ public boolean desactivar(int idProducto) throws SQLException {
               </div>
               
               <div className="relative max-w-2xl space-y-4">
-                <span className="bg-primary-glow text-primary text-xs font-bold font-mono px-3 py-1 rounded-full border border-primary/20" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>
+                <span className="bg-primary-glow text-primary text-xs font-bold font-mono px-3 py-1 rounded-full border border-primary/20" style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}>
                   Arquitectura Multi-capas & Conexión Remota
                 </span>
                 <h3 className="text-4xl font-extrabold tracking-tight text-white" style={{ fontSize: '2.25rem' }}>Sistema RestoManager</h3>
@@ -1641,8 +2878,8 @@ public boolean desactivar(int idProducto) throws SQLException {
                 <div className="pt-4 flex gap-4">
                   <button 
                     onClick={() => setActiveTab('flujo')}
-                    className="bg-primary hover:bg-primary-hover text-black font-semibold px-6 py-3 rounded-xl flex items-center gap-2 transition"
-                    style={{ backgroundColor: 'var(--primary)' }}
+                    className="bg-primary hover:bg-primary-hover text-white font-semibold px-6 py-3 rounded-xl flex items-center gap-2 transition"
+                    style={{ backgroundColor: 'var(--primary)', color: '#ffffff' }}
                   >
                     <span>Ver Flujo del Sistema</span>
                     <ArrowRight className="w-4 h-4" />
@@ -1798,8 +3035,8 @@ public boolean desactivar(int idProducto) throws SQLException {
             </div>
 
             {/* Hotfix Highlight section */}
-            <div className="bg-card border border-warning/20 p-6 rounded-2xl flex gap-4 items-start animate-pulse" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>
-              <div className="p-3 bg-warning/10 text-primary rounded-xl" style={{ backgroundColor: 'rgba(249, 155, 32, 0.1)', color: 'var(--primary)' }}>
+            <div className="bg-card border border-primary/20 p-6 rounded-2xl flex gap-4 items-start" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'rgba(212, 0, 0, 0.2)' }}>
+              <div className="p-3 bg-primary-glow text-primary rounded-xl" style={{ backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' }}>
                 <AlertTriangle className="w-6 h-6" />
               </div>
               <div className="space-y-1">
@@ -1865,7 +3102,7 @@ public boolean desactivar(int idProducto) throws SQLException {
 
               {/* Dynamic Layer Info Box */}
               {selectedLayer === 'vista' && (
-                <div className="bg-code-bg p-6 rounded-2xl border border-border space-y-4 animate-slide-up" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                <div className="bg-card p-6 rounded-2xl border border-border space-y-4 animate-slide-up" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                   <h4 className="text-lg font-bold text-white flex items-center gap-2">
                     <span className="w-3 h-3 rounded-full bg-primary" style={{ backgroundColor: 'var(--primary)' }}></span>
                     🖼️ Capa Vista (GUI) — Swing Desktop (¡Haz clic en los archivos para inspeccionar su código!)
@@ -1876,40 +3113,40 @@ public boolean desactivar(int idProducto) throws SQLException {
                   <div className="flex flex-wrap gap-2 pt-2">
                     <button
                       onClick={() => { setActiveCodeFile('loginJava'); setActiveTab('ide'); }}
-                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
-                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-white transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}
                     >
                       <FileCode className="w-3 h-3" />
                       <span>Login.java</span>
                     </button>
                     <button
                       onClick={() => { setActiveCodeFile('menuJava'); setActiveTab('ide'); }}
-                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
-                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-white transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}
                     >
                       <FileCode className="w-3 h-3" />
                       <span>Menu.java</span>
                     </button>
                     <button
                       onClick={() => { setActiveCodeFile('mesasPanelJava'); setActiveTab('ide'); }}
-                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
-                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-white transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}
                     >
                       <FileCode className="w-3 h-3" />
                       <span>MesasPanel.java</span>
                     </button>
                     <button
                       onClick={() => { setActiveCodeFile('detallesMesasPanel'); setActiveTab('ide'); }}
-                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
-                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-white transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}
                     >
                       <FileCode className="w-3 h-3" />
                       <span>DetallesMesasPanel.java</span>
                     </button>
                     <button
                       onClick={() => { setActiveCodeFile('checkoutDialogJava'); setActiveTab('ide'); }}
-                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
-                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-white transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}
                     >
                       <FileCode className="w-3 h-3" />
                       <span>CheckoutDialog.java</span>
@@ -1919,7 +3156,7 @@ public boolean desactivar(int idProducto) throws SQLException {
               )}
 
               {selectedLayer === 'servicio' && (
-                <div className="bg-code-bg p-6 rounded-2xl border border-border space-y-4 animate-slide-up" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                <div className="bg-card p-6 rounded-2xl border border-border space-y-4 animate-slide-up" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                   <h4 className="text-lg font-bold text-white flex items-center gap-2">
                     <span className="w-3 h-3 rounded-full bg-primary" style={{ backgroundColor: 'var(--primary)' }}></span>
                     ⚙️ Capa de Servicio / Controlador (Lógica de Negocio)
@@ -1930,24 +3167,24 @@ public boolean desactivar(int idProducto) throws SQLException {
                   <div className="flex flex-wrap gap-2 pt-2">
                     <button
                       onClick={() => { setActiveCodeFile('mesaService'); setActiveTab('ide'); }}
-                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
-                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-white transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}
                     >
                       <FileCode className="w-3 h-3" />
                       <span>MesaService.java</span>
                     </button>
                     <button
                       onClick={() => { setActiveCodeFile('pedidoService'); setActiveTab('ide'); }}
-                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
-                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-white transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}
                     >
                       <FileCode className="w-3 h-3" />
                       <span>PedidoService.java</span>
                     </button>
                     <button
                       onClick={() => { setActiveCodeFile('servicioFactory'); setActiveTab('ide'); }}
-                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
-                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-white transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}
                     >
                       <FileCode className="w-3 h-3" />
                       <span>ServicioFactory.java</span>
@@ -1957,7 +3194,7 @@ public boolean desactivar(int idProducto) throws SQLException {
               )}
 
               {selectedLayer === 'dao' && (
-                <div className="bg-code-bg p-6 rounded-2xl border border-border space-y-4 animate-slide-up" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                <div className="bg-card p-6 rounded-2xl border border-border space-y-4 animate-slide-up" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                   <h4 className="text-lg font-bold text-white flex items-center gap-2">
                     <span className="w-3 h-3 rounded-full bg-primary" style={{ backgroundColor: 'var(--primary)' }}></span>
                     🗄️ Capa DAO (Data Access Object)
@@ -1968,8 +3205,8 @@ public boolean desactivar(int idProducto) throws SQLException {
                   <div className="flex flex-wrap gap-2 pt-2">
                     <button
                       onClick={() => { setActiveCodeFile('pedidoDAO'); setActiveTab('ide'); }}
-                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
-                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-white transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}
                     >
                       <FileCode className="w-3 h-3" />
                       <span>PedidoDAOImpl.java</span>
@@ -1979,7 +3216,7 @@ public boolean desactivar(int idProducto) throws SQLException {
               )}
 
               {selectedLayer === 'modelo' && (
-                <div className="bg-code-bg p-6 rounded-2xl border border-border space-y-4 animate-slide-up" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                <div className="bg-card p-6 rounded-2xl border border-border space-y-4 animate-slide-up" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                   <h4 className="text-lg font-bold text-white flex items-center gap-2">
                     <span className="w-3 h-3 rounded-full bg-primary" style={{ backgroundColor: 'var(--primary)' }}></span>
                     📦 Capa Modelo (Entidades del Dominio)
@@ -1997,7 +3234,7 @@ public boolean desactivar(int idProducto) throws SQLException {
               )}
 
               {selectedLayer === 'persistencia' && (
-                <div className="bg-code-bg p-6 rounded-2xl border border-border space-y-4 animate-slide-up" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                <div className="bg-card p-6 rounded-2xl border border-border space-y-4 animate-slide-up" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                   <h4 className="text-lg font-bold text-white flex items-center gap-2">
                     <span className="w-3 h-3 rounded-full bg-primary" style={{ backgroundColor: 'var(--primary)' }}></span>
                     🔌 Capa de Persistencia y Base de Datos (TiDB Cloud)
@@ -2008,16 +3245,16 @@ public boolean desactivar(int idProducto) throws SQLException {
                   <div className="flex flex-wrap gap-2 pt-2">
                     <button
                       onClick={() => { setActiveCodeFile('conexionDB'); setActiveTab('ide'); }}
-                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
-                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-white transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}
                     >
                       <FileCode className="w-3 h-3" />
                       <span>ConexionDB.java</span>
                     </button>
                     <button
                       onClick={() => { setActiveCodeFile('depXml'); setActiveTab('ide'); }}
-                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
-                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-white transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}
                     >
                       <FileCode className="w-3 h-3" />
                       <span>dep.xml (Assembly)</span>
@@ -2026,6 +3263,10 @@ public boolean desactivar(int idProducto) throws SQLException {
                 </div>
               )}
             </div>
+
+            <EntityRelationshipDiagram
+              onOpenSchema={() => { setActiveCodeFile('schemaSql'); setActiveTab('ide'); }}
+            />
 
             {/* Core architecture mapping visually */}
             <div className="bg-card border border-border rounded-3xl p-8 space-y-8" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
@@ -2053,7 +3294,7 @@ public boolean desactivar(int idProducto) throws SQLException {
 
               {/* REACTOR SIMULATOR VIEW (IF ACTIVE) */}
               {buildStep >= 0 && (
-                <div className="bg-code-bg p-6 rounded-2xl border border-primary/20 space-y-4 animate-slide-up shadow-inner relative overflow-hidden" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'rgba(249, 155, 32, 0.2)' }}>
+                <div className="bg-card p-6 rounded-2xl border border-primary/20 space-y-4 animate-slide-up shadow-md relative overflow-hidden" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'rgba(212, 0, 0, 0.2)' }}>
                   <div className="absolute right-4 top-4 text-xs font-mono text-muted" style={{ color: 'var(--text-muted)' }}>
                     Paso {buildStep + 1} de 4
                   </div>
@@ -2168,8 +3409,8 @@ public boolean desactivar(int idProducto) throws SQLException {
                           setBuildStep(p => p + 1);
                         }
                       }}
-                      className="bg-primary hover:bg-primary-hover text-black px-3 py-1.5 rounded-lg text-xs font-semibold transition"
-                      style={{ backgroundColor: 'var(--primary)', color: '#000' }}
+                      className="bg-primary hover:bg-primary-hover text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
+                      style={{ backgroundColor: 'var(--primary)', color: '#ffffff' }}
                     >
                       {buildStep === 3 ? 'Finalizar Simulación' : 'Siguiente Paso'}
                     </button>
@@ -2178,7 +3419,7 @@ public boolean desactivar(int idProducto) throws SQLException {
               )}
 
               {/* INTERACTIVE DEPENDENCY VISUAL GRAPH */}
-              <div className="bg-code-bg/30 p-6 rounded-2xl border border-border relative overflow-hidden" style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(26, 21, 17, 0.3)' }}>
+              <div className="bg-card p-6 rounded-2xl border border-border relative overflow-hidden" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
                 <span className="absolute top-3 left-3 text-[10px] font-mono text-muted uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
                   Visualizador de Estructura de Módulos (¡Haz clic en un módulo o dependencia!)
                 </span>
@@ -2236,7 +3477,7 @@ public boolean desactivar(int idProducto) throws SQLException {
                         
                         <button
                           onClick={() => setSelectedDep('mysql')}
-                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'mysql' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-code-bg border-transparent text-secondary hover:bg-card-hover hover:text-white'}`}
+                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'mysql' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-card border-border text-secondary hover:bg-card-hover hover:text-primary'}`}
                           style={selectedDep === 'mysql' ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : {}}
                         >
                           mysql-connector-j
@@ -2244,7 +3485,7 @@ public boolean desactivar(int idProducto) throws SQLException {
                         
                         <button
                           onClick={() => setSelectedDep('hikaricp')}
-                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'hikaricp' ? 'bg-primary-glow border-primary text-primary font-bold animate-pulse' : 'bg-code-bg border-transparent text-secondary hover:bg-card-hover hover:text-white'}`}
+                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'hikaricp' ? 'bg-primary-glow border-primary text-primary font-bold animate-pulse' : 'bg-card border-border text-secondary hover:bg-card-hover hover:text-primary'}`}
                           style={selectedDep === 'hikaricp' ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : {}}
                         >
                           HikariCP (Pool)
@@ -2252,7 +3493,7 @@ public boolean desactivar(int idProducto) throws SQLException {
                         
                         <button
                           onClick={() => setSelectedDep('slf4j')}
-                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'slf4j' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-code-bg border-transparent text-secondary hover:bg-card-hover hover:text-white'}`}
+                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'slf4j' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-card border-border text-secondary hover:bg-card-hover hover:text-primary'}`}
                           style={selectedDep === 'slf4j' ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : {}}
                         >
                           slf4j-api & simple
@@ -2260,7 +3501,7 @@ public boolean desactivar(int idProducto) throws SQLException {
 
                         <button
                           onClick={() => setSelectedDep('junit')}
-                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'junit' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-code-bg border-transparent text-muted hover:bg-card-hover hover:text-white'}`}
+                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'junit' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-card border-border text-muted hover:bg-card-hover hover:text-primary'}`}
                           style={selectedDep === 'junit' ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : { color: 'var(--text-muted)' }}
                         >
                           junit-jupiter (test)
@@ -2300,7 +3541,7 @@ public boolean desactivar(int idProducto) throws SQLException {
                         
                         <button
                           onClick={() => setSelectedDep('backend')}
-                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'backend' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-code-bg border-transparent text-primary hover:bg-card-hover hover:text-white'}`}
+                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'backend' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-card border-border text-primary hover:bg-card-hover hover:text-primary'}`}
                           style={selectedDep === 'backend' ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : { color: 'var(--primary)' }}
                         >
                           Backend (Modulo)
@@ -2308,7 +3549,7 @@ public boolean desactivar(int idProducto) throws SQLException {
                         
                         <button
                           onClick={() => setSelectedDep('absoluteLayout')}
-                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'absoluteLayout' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-code-bg border-transparent text-secondary hover:bg-card-hover hover:text-white'}`}
+                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'absoluteLayout' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-card border-border text-secondary hover:bg-card-hover hover:text-primary'}`}
                           style={selectedDep === 'absoluteLayout' ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : {}}
                         >
                           AbsoluteLayout.jar
@@ -2316,7 +3557,7 @@ public boolean desactivar(int idProducto) throws SQLException {
                         
                         <button
                           onClick={() => setSelectedDep('lgooddatepicker')}
-                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'lgooddatepicker' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-code-bg border-transparent text-secondary hover:bg-card-hover hover:text-white'}`}
+                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'lgooddatepicker' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-card border-border text-secondary hover:bg-card-hover hover:text-primary'}`}
                           style={selectedDep === 'lgooddatepicker' ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : {}}
                         >
                           LGoodDatePicker.jar
@@ -2324,7 +3565,7 @@ public boolean desactivar(int idProducto) throws SQLException {
 
                         <button
                           onClick={() => setSelectedDep('jfreechart')}
-                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'jfreechart' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-code-bg border-transparent text-secondary hover:bg-card-hover hover:text-white'}`}
+                          className={`w-full text-left p-1.5 rounded text-[10px] font-mono transition border ${selectedDep === 'jfreechart' ? 'bg-primary-glow border-primary text-primary font-bold' : 'bg-card border-border text-secondary hover:bg-card-hover hover:text-primary'}`}
                           style={selectedDep === 'jfreechart' ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)', color: 'var(--primary)' } : {}}
                         >
                           jfreechart-1.5.4.jar
@@ -2339,7 +3580,7 @@ public boolean desactivar(int idProducto) throws SQLException {
               {/* MAVEN MODULE DETAILS OR MAVEN DEPENDENCY DETAILS DETAIL BOX */}
               {selectedDep ? (
                 /* DEPENDENCY DETAIL VIEW */
-                <div className="bg-code-bg p-6 rounded-2xl border border-primary/30 space-y-4 animate-slide-up shadow-inner relative" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'rgba(249, 155, 32, 0.3)' }}>
+                <div className="bg-card p-6 rounded-2xl border border-primary/30 space-y-4 animate-slide-up shadow-md relative" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'rgba(212, 0, 0, 0.3)' }}>
                   <button
                     onClick={() => setSelectedDep(null)}
                     className="absolute top-4 right-4 text-xs text-muted hover:text-white font-mono"
@@ -2349,7 +3590,7 @@ public boolean desactivar(int idProducto) throws SQLException {
                   </button>
                   
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-primary-glow border border-primary/20 flex items-center justify-center" style={{ backgroundColor: 'var(--primary-glow)' }}>
+                    <div className="w-10 h-10 rounded-xl bg-primary-glow border border-primary/20 flex items-center justify-center" style={{ backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}>
                       <FileCode className="w-5 h-5 text-primary" style={{ color: 'var(--primary)' }} />
                     </div>
                     <div>
@@ -2373,16 +3614,15 @@ public boolean desactivar(int idProducto) throws SQLException {
                     </div>
                     <div className="bg-card p-4 rounded-xl border border-border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                       <span className="text-[10px] uppercase font-bold tracking-wider text-muted block mb-1" style={{ color: 'var(--text-muted)' }}>Tipo de Carga</span>
-                      <span className="text-xs font-semibold text-white">
-                        {selectedDep === 'backend' ? 'Dependencia Interna de Módulo' : 
-                         DEPENDENCY_DETAILS[selectedDep === 'slf4j' ? 'slf4j' : selectedDep].scope === 'system' ? 'Librería JAR Local Física (GUI/lib/)' : 'Descargada desde Repositorio Maven Central'}
+                      <span className="text-xs font-mono text-primary font-semibold" style={{ color: 'var(--primary)' }}>
+                        {DEPENDENCY_DETAILS[selectedDep === 'slf4j' ? 'slf4j' : selectedDep].scope === 'system' ? 'JAR local embebido (lib/)' : 'Descarga remota (Maven Central)'}
                       </span>
                     </div>
                   </div>
 
                   {/* Redirection button if applicable */}
                   <div className="pt-2 flex items-center gap-2">
-                    <span className="text-xs text-muted font-bold font-mono uppercase mr-2" style={{ color: 'var(--text-muted)' }}>Ver en la configuración:</span>
+                    <span className="text-xs text-muted font-bold font-mono uppercase mr-2" style={{ color: 'var(--text-muted)' }}>Ver Declaración XML:</span>
                     <button
                       onClick={() => {
                         if (selectedDep === 'mysql' || selectedDep === 'hikaricp' || selectedDep === 'slf4j' || selectedDep === 'junit') {
@@ -2392,8 +3632,8 @@ public boolean desactivar(int idProducto) throws SQLException {
                         }
                         setActiveTab('ide');
                       }}
-                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
-                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                      className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-white transition flex items-center gap-1.5"
+                      style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}
                     >
                       <FileCode className="w-3 h-3" />
                       <span>{selectedDep === 'mysql' || selectedDep === 'hikaricp' || selectedDep === 'slf4j' || selectedDep === 'junit' ? 'Backend/pom.xml' : 'GUI/pom.xml'}</span>
@@ -2404,7 +3644,7 @@ public boolean desactivar(int idProducto) throws SQLException {
                 /* STANDARD MODULE DETAILS WINDOW */
                 <>
                   {activatedMavenModule === 'parent' && (
-                    <div className="bg-code-bg p-6 rounded-2xl border border-border space-y-4 animate-slide-up shadow-inner animate-fade-in" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                    <div className="bg-card p-6 rounded-2xl border border-border space-y-4 animate-slide-up shadow-md animate-fade-in" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                       <h4 className="text-lg font-bold text-white flex items-center gap-2">
                         <span className="w-3 h-3 rounded-full bg-primary" style={{ backgroundColor: 'var(--primary)' }}></span>
                         📦 restaurant-parent (POM Raíz) — Orquestador Multi-módulo
@@ -2426,8 +3666,8 @@ public boolean desactivar(int idProducto) throws SQLException {
                         <span className="text-xs text-muted font-bold font-mono uppercase mr-2" style={{ color: 'var(--text-muted)' }}>Ver Configuración:</span>
                         <button
                           onClick={() => { setActiveCodeFile('rootPom'); setActiveTab('ide'); }}
-                          className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5 animate-pulse"
-                          style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                          className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-white transition flex items-center gap-1.5 animate-pulse"
+                          style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}
                         >
                           <FileCode className="w-3 h-3" />
                           <span>pom.xml (Raíz)</span>
@@ -2437,7 +3677,7 @@ public boolean desactivar(int idProducto) throws SQLException {
                   )}
 
                   {activatedMavenModule === 'backend' && (
-                    <div className="bg-code-bg p-6 rounded-2xl border border-border space-y-4 animate-slide-up shadow-inner animate-fade-in" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                    <div className="bg-card p-6 rounded-2xl border border-border space-y-4 animate-slide-up shadow-md animate-fade-in" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                       <h4 className="text-lg font-bold text-white flex items-center gap-2">
                         <span className="w-3 h-3 rounded-full bg-primary" style={{ backgroundColor: 'var(--primary)' }}></span>
                         ⚙️ Módulo Backend (Negocio & Acceso a Datos) — Configuración pom.xml
@@ -2458,8 +3698,8 @@ public boolean desactivar(int idProducto) throws SQLException {
                         <span className="text-xs text-muted font-bold font-mono uppercase mr-2" style={{ color: 'var(--text-muted)' }}>Ver Configuración:</span>
                         <button
                           onClick={() => { setActiveCodeFile('backendPom'); setActiveTab('ide'); }}
-                          className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5 animate-pulse"
-                          style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                          className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-white transition flex items-center gap-1.5 animate-pulse"
+                          style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}
                         >
                           <FileCode className="w-3 h-3" />
                           <span>Backend/pom.xml</span>
@@ -2469,7 +3709,7 @@ public boolean desactivar(int idProducto) throws SQLException {
                   )}
 
                   {activatedMavenModule === 'gui' && (
-                    <div className="bg-code-bg p-6 rounded-2xl border border-border space-y-4 animate-slide-up shadow-inner animate-fade-in" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                    <div className="bg-card p-6 rounded-2xl border border-border space-y-4 animate-slide-up shadow-md animate-fade-in" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                       <h4 className="text-lg font-bold text-white flex items-center gap-2">
                         <span className="w-3 h-3 rounded-full bg-primary" style={{ backgroundColor: 'var(--primary)' }}></span>
                         🖼️ Módulo GUI (Presentación Swing & Empacado Fat JAR) — Configuración pom.xml
@@ -2499,16 +3739,16 @@ public boolean desactivar(int idProducto) throws SQLException {
                         <span className="text-xs text-muted font-bold font-mono uppercase mr-2" style={{ color: 'var(--text-muted)' }}>Ver Configuración:</span>
                         <button
                           onClick={() => { setActiveCodeFile('guiPom'); setActiveTab('ide'); }}
-                          className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
-                          style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                          className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-white transition flex items-center gap-1.5"
+                          style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}
                         >
                           <FileCode className="w-3 h-3" />
                           <span>GUI/pom.xml</span>
                         </button>
                         <button
                           onClick={() => { setActiveCodeFile('depXml'); setActiveTab('ide'); }}
-                          className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-black transition flex items-center gap-1.5"
-                          style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(249, 155, 32, 0.2)' }}
+                          className="text-xs bg-primary-glow text-primary px-3 py-1.5 rounded-lg border border-primary/20 font-mono hover:bg-primary hover:text-white transition flex items-center gap-1.5"
+                          style={{ color: 'var(--primary)', backgroundColor: 'var(--primary-glow)', borderColor: 'rgba(212, 0, 0, 0.2)' }}
                         >
                           <FileCode className="w-3 h-3" />
                           <span>src/assembly/dep.xml</span>
@@ -2531,6 +3771,362 @@ public boolean desactivar(int idProducto) throws SQLException {
           </div>
         )}
 
+        {/* 2.5 TESTING TAB */}
+        {activeTab === 'testing' && (
+          <div className="testing-page animate-slide-up">
+            <section className="testing-hero" aria-labelledby="testing-hero-title">
+              <div className="testing-hero-copy">
+                <span className="testing-kicker">Calidad de software en el backend</span>
+                <h3 id="testing-hero-title">83 pruebas para explicar el backend con evidencia.</h3>
+                <p>
+                  La suite separa reglas de negocio en memoria de persistencia JDBC real. Así cada prueba responde una pregunta concreta y fácil de defender.
+                </p>
+                <div className="testing-hero-actions">
+                  <button
+                    type="button"
+                    onClick={runSimulatedTestSuite}
+                    disabled={testSuiteRunning}
+                    className="testing-primary-button"
+                  >
+                    <Play className="testing-icon" />
+                    <span>{testSuiteRunning ? 'Reproduciendo...' : 'Reproducir salida'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveCodeFile('pedidoServiceTest'); setActiveTab('ide'); }}
+                    className="testing-secondary-button"
+                  >
+                    <Code2 className="testing-icon" />
+                    <span>Abrir un test</span>
+                  </button>
+                </div>
+              </div>
+
+              <aside className="testing-hero-proof" aria-label="Resultado documentado de la suite">
+                <span className="testing-proof-label">Resultado documentado</span>
+                <strong>44 <span>+</span> 39</strong>
+                <span className="testing-proof-caption">unitarias / integración</span>
+                <div className="testing-proof-result">
+                  <CheckCheck className="testing-icon" />
+                  <span>83 de 83 sin fallos</span>
+                </div>
+                <small>Informe de pruebas del repositorio</small>
+              </aside>
+            </section>
+
+            <section className="testing-kpis" aria-label="Resumen de pruebas">
+              <div className="testing-kpi">
+                <strong>83</strong>
+                <span>casos ejecutables</span>
+              </div>
+              <div className="testing-kpi">
+                <strong>15</strong>
+                <span>archivos catalogados</span>
+              </div>
+              <div className="testing-kpi">
+                <strong>77,5%</strong>
+                <span>cobertura de líneas</span>
+              </div>
+              <div className="testing-kpi">
+                <strong>56,6%</strong>
+                <span>cobertura de ramas</span>
+              </div>
+            </section>
+
+            <section className="testing-section" aria-labelledby="testing-suites-title">
+              <div className="testing-section-heading">
+                <h4 id="testing-suites-title">Dos suites, dos preguntas</h4>
+                <p>La primera aísla reglas. La segunda comprueba que esas reglas sobrevivan al contacto con SQL, JDBC y la base de prueba.</p>
+              </div>
+
+              <div className="testing-suite-grid">
+                <article className="testing-suite testing-suite-unit">
+                  <div className="testing-suite-header">
+                    <div>
+                      <span className="testing-suite-label">Suite unitaria</span>
+                      <h5>¿La regla funciona?</h5>
+                    </div>
+                    <strong>44</strong>
+                  </div>
+                  <p>JUnit 5 y Mockito reemplazan DAOs y servicios colaboradores. No hay red ni base de datos.</p>
+                  <div className="testing-class-list">
+                    {TEST_CATALOG.filter(test => test.group === 'unit').map(test => (
+                      <button
+                        type="button"
+                        key={test.id}
+                        className="testing-class-item"
+                        onClick={() => { setTestFilter('unit'); setActiveTestCase(test.id); }}
+                      >
+                        <span>{test.name.replace('.java', '')}</span>
+                        <b>{test.count}</b>
+                      </button>
+                    ))}
+                  </div>
+                  <code className="testing-command-inline">mvn -pl Backend clean verify</code>
+                </article>
+
+                <article className="testing-suite testing-suite-integration">
+                  <div className="testing-suite-header">
+                    <div>
+                      <span className="testing-suite-label">Suite de integración</span>
+                      <h5>¿El sistema persiste bien?</h5>
+                    </div>
+                    <strong>39</strong>
+                  </div>
+                  <p>Failsafe ejecuta los DAOs y el flujo E2E contra <code>restomanager_test</code>, con cleanup después de cada caso que escribe.</p>
+                  <div className="testing-class-list">
+                    {TEST_CATALOG.filter(test => test.group === 'integration').map(test => (
+                      <button
+                        type="button"
+                        key={test.id}
+                        className="testing-class-item"
+                        onClick={() => { setTestFilter('integration'); setActiveTestCase(test.id); }}
+                      >
+                        <span>{test.name.replace('.java', '')}</span>
+                        <b>{test.count}</b>
+                      </button>
+                    ))}
+                  </div>
+                  <code className="testing-command-inline">mvn -pl Backend -Pintegration-tests clean verify</code>
+                </article>
+              </div>
+            </section>
+
+            <section className="testing-section testing-method-section" aria-labelledby="testing-method-title">
+              <div className="testing-section-heading">
+                <h4 id="testing-method-title">La receta de una prueba clara</h4>
+                <p>Los nombres de los métodos describen el comportamiento y el cuerpo sigue una secuencia corta para encontrar la causa de un fallo.</p>
+              </div>
+              <div className="testing-method-grid">
+                <article>
+                  <span className="testing-method-tag">Arrange</span>
+                  <h5>Preparar</h5>
+                  <p>Crear datos y programar respuestas de los mocks.</p>
+                </article>
+                <article>
+                  <span className="testing-method-tag">Act</span>
+                  <h5>Ejecutar</h5>
+                  <p>Llamar una sola operación del servicio o DAO.</p>
+                </article>
+                <article>
+                  <span className="testing-method-tag">Assert</span>
+                  <h5>Comprobar</h5>
+                  <p>Comparar resultado, estado y colaboraciones importantes.</p>
+                </article>
+                <article>
+                  <span className="testing-method-tag">Teardown</span>
+                  <h5>Limpiar</h5>
+                  <p>Eliminar los datos creados para repetir el caso sin residuos.</p>
+                </article>
+              </div>
+            </section>
+
+            <section className="testing-safety" aria-labelledby="testing-safety-title">
+              <div className="testing-safety-copy">
+                <div className="testing-safety-icon"><ShieldCheck /></div>
+                <div>
+                  <span className="testing-suite-label">Guardrail de infraestructura</span>
+                  <h4 id="testing-safety-title">El test no puede tocar producción</h4>
+                  <p><code>DedicatedDatabaseExtension</code> corre antes de cada clase de integración. Si <code>db.url</code> no termina en <code>restomanager_test</code>, JUnit detiene la suite con <code>IllegalStateException</code>.</p>
+                </div>
+              </div>
+              <pre className="testing-safety-code"><code>{TEST_CODE_SNIPPETS.dedicatedDatabaseExtension.code}</code></pre>
+            </section>
+
+            <section className="testing-section testing-lab-section" aria-labelledby="testing-lab-title">
+              <div className="testing-section-heading">
+                <h4 id="testing-lab-title">Explorar los 15 archivos reales</h4>
+                <p>Elegí una clase para ver qué protege, cuáles son sus casos y un extracto corto de la implementación.</p>
+              </div>
+
+              <div className="testing-lab-toolbar">
+                <div className="testing-search-field">
+                  <label htmlFor="test-search">Buscar clase o caso</label>
+                  <input
+                    id="test-search"
+                    type="search"
+                    value={testQuery}
+                    onChange={(event) => setTestQuery(event.target.value)}
+                    placeholder="Ejemplo: stock, MesaServiceTest"
+                  />
+                </div>
+                <div className="testing-filter-group" role="tablist" aria-label="Filtrar clases de prueba">
+                  {[
+                    { id: 'all', label: 'Todas' },
+                    { id: 'unit', label: 'Unitarias' },
+                    { id: 'integration', label: 'Integración' },
+                    { id: 'safety', label: 'Seguridad' }
+                  ].map(filter => (
+                    <button
+                      type="button"
+                      key={filter.id}
+                      role="tab"
+                      aria-selected={testFilter === filter.id}
+                      className={`testing-filter-button ${testFilter === filter.id ? 'is-active' : ''}`}
+                      onClick={() => changeTestFilter(filter.id)}
+                    >
+                      {filter.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="testing-lab-layout">
+                <div className="testing-catalog-panel">
+                  <div className="testing-catalog-summary">
+                    <span>{visibleTestCatalog.length} visibles</span>
+                    <span>{visibleTestCatalog.reduce((total, test) => total + test.count, 0)} tests</span>
+                  </div>
+                  <div className="testing-catalog-list">
+                    {visibleTestCatalog.length > 0 ? visibleTestCatalog.map(test => (
+                      <button
+                        type="button"
+                        key={test.id}
+                        className={`testing-test-row ${activeTestCase === test.id ? 'is-active' : ''}`}
+                        onClick={() => setActiveTestCase(test.id)}
+                        aria-pressed={activeTestCase === test.id}
+                      >
+                        <span className="testing-test-row-copy">
+                          <span className="testing-test-row-title"><FileCode />{test.name}</span>
+                          <span className="testing-test-row-meta">{test.area} / {test.groupLabel}</span>
+                        </span>
+                        <span className="testing-test-count">{test.count || 'guardrail'}</span>
+                      </button>
+                    )) : (
+                      <div className="testing-empty-state">
+                        <HelpCircle />
+                        <strong>No encontramos esa clase</strong>
+                        <span>Probá con otro nombre o vaciá la búsqueda.</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <article className="testing-detail-panel">
+                  <header className="testing-detail-header">
+                    <div>
+                      <div className="testing-detail-meta">
+                        <span>{selectedTest.groupLabel}</span>
+                        <span>{selectedTest.area}</span>
+                        <span>{selectedTest.count ? `${selectedTest.count} tests` : 'sin @Test propio'}</span>
+                      </div>
+                      <h5>{selectedTest.name}</h5>
+                      <code>{selectedTest.path}</code>
+                    </div>
+                    <button
+                      type="button"
+                      className="testing-open-code"
+                      onClick={() => { setActiveCodeFile(selectedTest.snippetKey); setActiveTab('ide'); }}
+                    >
+                      <FileCode />
+                      <span>Ver en explorador</span>
+                    </button>
+                  </header>
+
+                  <div className="testing-detail-grid">
+                    <div className="testing-detail-copy">
+                      <div className="testing-detail-callout">
+                        <span>En una frase</span>
+                        <p>{selectedTest.concept}</p>
+                      </div>
+                      <h6>Qué comprueba</h6>
+                      <ul className="testing-check-list">
+                        {selectedTest.checks.map(check => (
+                          <li key={check}><Check /><span>{check}</span></li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="testing-code-panel">
+                      <div className="testing-code-header">
+                        <span>Extracto resumido</span>
+                        <span>{selectedTestSnippet.language}</span>
+                      </div>
+                      <pre><code>{selectedTestSnippet.code}</code></pre>
+                    </div>
+                  </div>
+
+                  <details className="testing-methods-details">
+                    <summary>
+                      {selectedTest.count
+                        ? `Ver los ${selectedTest.count} nombres de prueba`
+                        : 'Ver la regla de seguridad'}
+                    </summary>
+                    {selectedTest.methods.length > 0 ? (
+                      <div className="testing-methods-list">
+                        {selectedTest.methods.map(method => <code key={method}>{method}</code>)}
+                      </div>
+                    ) : (
+                      <p className="testing-no-methods">Esta clase no tiene métodos @Test. Protege el ciclo de vida de las integraciones.</p>
+                    )}
+                  </details>
+                </article>
+              </div>
+            </section>
+
+            <section className="testing-execution" aria-labelledby="testing-execution-title">
+              <div className="testing-command-panel">
+                <div className="testing-section-heading">
+                  <h4 id="testing-execution-title">Ejecutar y medir</h4>
+                  <p>Las unitarias se ejecutan sin base. Las integraciones requieren una base dedicada y credenciales por propiedades del sistema.</p>
+                </div>
+                <div className="testing-command-list">
+                  <article className="testing-command-card">
+                    <span>Unitarias</span>
+                    <code>mvn -pl Backend clean verify</code>
+                    <p>Surefire ejecuta las clases terminadas en <code>Test.java</code> y genera cobertura.</p>
+                  </article>
+                  <article className="testing-command-card">
+                    <span>Integración</span>
+                    <code>mvn -pl Backend -Pintegration-tests clean verify -Ddb.url=jdbc:mysql://127.0.0.1:3307/restomanager_test</code>
+                    <p>Failsafe ejecuta las clases <code>IT.java</code> contra <code>restomanager_test</code>.</p>
+                  </article>
+                  <article className="testing-command-card">
+                    <span>Informe</span>
+                    <code>Backend/target/site/jacoco/index.html</code>
+                    <p>JaCoCo muestra líneas, ramas y paquetes cubiertos.</p>
+                  </article>
+                </div>
+                <div className="testing-evidence">
+                  <strong>Evidencia guardada</strong>
+                  <span>44/44 unitarias y 39/39 integraciones. La corrida documentada usó MariaDB local en el puerto 3307.</span>
+                </div>
+              </div>
+
+              <div className="testing-console-panel">
+                <div className="testing-console-heading">
+                  <div>
+                    <span className="testing-suite-label">Simulador</span>
+                    <h4>Salida de la suite</h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={runSimulatedTestSuite}
+                    disabled={testSuiteRunning}
+                    className="testing-console-button"
+                  >
+                    <Play />
+                    <span>{testSuiteRunning ? 'Ejecutando' : 'Repetir'}</span>
+                  </button>
+                </div>
+                <p className="testing-console-note">Reproducción visual de los resultados documentados. No ejecuta Maven ni modifica la base.</p>
+                <div className="testing-console-output" id="test-suite-console" aria-live="polite">
+                  {testSuiteOutput.map((log, index) => {
+                    const isPassed = log.includes('PASSED') || log.includes('BUILD SUCCESS') || log.includes('0 fallos');
+                    const isCommand = log.startsWith('$');
+                    return (
+                      <div key={`${log}-${index}`} className={isPassed ? 'is-passed' : isCommand ? 'is-command' : ''}>
+                        {log}
+                      </div>
+                    );
+                  })}
+                  {testSuiteRunning && <div className="testing-console-cursor">Procesando casos de prueba...</div>}
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
+
         {/* 3. FLOW GALLERY TAB */}
         {activeTab === 'flujo' && (
           <div className="flow-layout animate-slide-up">
@@ -2544,8 +4140,8 @@ public boolean desactivar(int idProducto) throws SQLException {
                     setActiveStage(stage.id);
                     setCarouselIndex(0);
                   }}
-                  className={`w-full text-left text-xs font-semibold px-4 py-3 rounded-xl flex items-center justify-between transition-all duration-200 ${activeStage === stage.id ? 'bg-primary text-black font-semibold' : 'text-secondary hover:bg-card-hover hover:text-white'}`}
-                  style={activeStage === stage.id ? { color: '#000', backgroundColor: 'var(--primary)' } : {}}
+                  className={`w-full text-left text-xs font-semibold px-4 py-3 rounded-xl flex items-center justify-between transition-all duration-200 ${activeStage === stage.id ? 'bg-primary text-white font-semibold' : 'text-secondary hover:bg-card-hover hover:text-white'}`}
+                  style={activeStage === stage.id ? { color: '#ffffff', backgroundColor: 'var(--primary)' } : {}}
                 >
                   <span>{stage.title}</span>
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -2591,12 +4187,12 @@ public boolean desactivar(int idProducto) throws SQLException {
                           const parent = e.target.parentElement;
                           if (!parent.querySelector('.image-error-fallback')) {
                             const fallback = document.createElement('div');
-                            fallback.className = 'image-error-fallback flex flex-col items-center justify-center p-8 text-center text-muted w-full h-full';
-                            fallback.style.color = 'var(--text-muted)';
+                            fallback.className = 'image-error-fallback flex flex-col items-center justify-center p-8 text-center w-full h-full';
+                            fallback.style.color = '#cfc5b8';
                             fallback.innerHTML = `
                               <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-12 h-12 text-primary mb-3" style="color:var(--primary); margin-bottom:12px;"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                              <p class="text-sm font-semibold text-white">Captura de Pantalla: ${activeImage.path.split('/').pop()}</p>
-                              <p class="text-xs mt-1 text-muted" style="color:var(--text-muted)">Ruta: /imgsistema/${activeImage.path}</p>
+                              <p class="text-sm font-semibold" style="color:#f4eee5">Captura de Pantalla: ${activeImage.path.split('/').pop()}</p>
+                              <p class="text-xs mt-1" style="color:#cfc5b8">Ruta: /imgsistema/${activeImage.path}</p>
                             `;
                             parent.appendChild(fallback);
                           }
@@ -2643,17 +4239,17 @@ public boolean desactivar(int idProducto) throws SQLException {
                     </h4>
                     
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="bg-code-bg p-4 rounded-xl border border-border" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                      <div className="bg-card p-4 rounded-xl border border-border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                         <span className="text-[10px] uppercase font-bold tracking-wider text-muted block mb-1" style={{ color: 'var(--text-muted)' }}>Capa Arquitectura</span>
                         <span className="text-sm font-semibold text-primary" style={{ color: 'var(--primary)' }}>{currentStage.techDetails.layer}</span>
                       </div>
                       
-                      <div className="bg-code-bg p-4 rounded-xl border border-border" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                      <div className="bg-card p-4 rounded-xl border border-border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                         <span className="text-[10px] uppercase font-bold tracking-wider text-muted block mb-1" style={{ color: 'var(--text-muted)' }}>Clases / Componentes</span>
                         <span className="text-xs font-mono text-white block truncate" title={currentStage.techDetails.component}>{currentStage.techDetails.component}</span>
                       </div>
                       
-                      <div className="bg-code-bg p-4 rounded-xl border border-border" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                      <div className="bg-card p-4 rounded-xl border border-border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                         <span className="text-[10px] uppercase font-bold tracking-wider text-muted block mb-1" style={{ color: 'var(--text-muted)' }}>Patrón de Diseño</span>
                         <span className="text-sm font-semibold text-white">{currentStage.techDetails.pattern}</span>
                       </div>
@@ -2720,6 +4316,14 @@ public boolean desactivar(int idProducto) throws SQLException {
                 >
                   <FileCode className="w-3.5 h-3.5" />
                   <span>PedidoDAOImpl.java</span>
+                </button>
+                <button
+                  onClick={() => setActiveCodeFile('schemaSql')}
+                  className={`w-full text-left text-xs font-mono px-3 py-2 rounded-lg flex items-center gap-2 transition ${activeCodeFile === 'schemaSql' ? 'bg-primary-glow text-primary font-semibold' : 'text-secondary hover:bg-card-hover'}`}
+                  style={activeCodeFile === 'schemaSql' ? { color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : {}}
+                >
+                  <FileCode className="w-3.5 h-3.5" />
+                  <span>schema.sql</span>
                 </button>
               </div>
 
@@ -2810,6 +4414,23 @@ public boolean desactivar(int idProducto) throws SQLException {
                   <span>dep.xml (Assembly)</span>
                 </button>
               </div>
+
+              <div className="space-y-1 pt-4">
+                <p className="text-xs text-muted font-mono px-3 mb-1" style={{ color: 'var(--text-muted)' }}>[Tests & Aseguramiento]</p>
+                {TEST_CATALOG.map(test => (
+                  <button
+                    type="button"
+                    key={test.id}
+                    onClick={() => setActiveCodeFile(test.snippetKey)}
+                    className={`w-full text-left text-xs font-mono px-3 py-2 rounded-lg flex items-center gap-2 transition ${activeCodeFile === test.snippetKey ? 'bg-primary-glow text-primary font-semibold' : 'text-secondary hover:bg-card-hover'}`}
+                    style={activeCodeFile === test.snippetKey ? { color: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : {}}
+                  >
+                    <FileCode className="w-3.5 h-3.5" />
+                    <span>{test.name}</span>
+                    <span className="text-[10px] text-muted" style={{ marginLeft: 'auto', color: 'var(--text-muted)' }}>{test.count || '!'}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Code editor visualization */}
@@ -2821,11 +4442,11 @@ public boolean desactivar(int idProducto) throws SQLException {
                   <span className="w-3 h-3 rounded-full bg-yellow-500"></span>
                   <span className="w-3 h-3 rounded-full bg-green-500"></span>
                   <span className="text-xs font-mono text-secondary ml-3" style={{ color: 'var(--text-secondary)' }}>
-                    {CODE_SNIPPETS[activeCodeFile].path}
+                    {ALL_CODE_SNIPPETS[activeCodeFile].path}
                   </span>
                 </div>
                 <span className="text-xs font-mono text-muted" style={{ color: 'var(--text-muted)' }}>
-                  {CODE_SNIPPETS[activeCodeFile].language.toUpperCase()}
+                  {ALL_CODE_SNIPPETS[activeCodeFile].language.toUpperCase()}
                 </span>
               </div>
 
@@ -2833,13 +4454,13 @@ public boolean desactivar(int idProducto) throws SQLException {
               <div className="bg-primary-glow/40 p-4 border-b border-border text-xs text-secondary flex items-start gap-2.5" style={{ backgroundColor: 'var(--primary-glow)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
                 <HelpCircle className="w-4 h-4 text-primary shrink-0 mt-0.5" style={{ color: 'var(--primary)' }} />
                 <span>
-                  <strong>Detalle técnico:</strong> {CODE_SNIPPETS[activeCodeFile].desc}
+                  <strong>Detalle técnico:</strong> {ALL_CODE_SNIPPETS[activeCodeFile].desc}
                 </span>
               </div>
 
               {/* Code Container */}
               <div className="flex-1 p-6 overflow-auto font-mono text-xs text-secondary leading-relaxed select-all" style={{ color: '#d1c7bd' }}>
-                <pre><code>{CODE_SNIPPETS[activeCodeFile].code}</code></pre>
+                <pre><code>{ALL_CODE_SNIPPETS[activeCodeFile].code}</code></pre>
               </div>
             </div>
           </div>
@@ -2853,29 +4474,29 @@ public boolean desactivar(int idProducto) throws SQLException {
               <div className="flex gap-3">
                 <button 
                   onClick={() => resetSimulator('login')}
-                  className={`px-4 py-2.5 rounded-xl font-semibold text-sm transition ${simFlow === 'login' ? 'bg-primary text-black' : 'border border-border text-secondary hover:bg-card-hover'}`}
-                  style={simFlow === 'login' ? { backgroundColor: 'var(--primary)', color: '#000' } : { borderColor: 'var(--border)' }}
+                  className={`px-4 py-2.5 rounded-xl font-semibold text-sm transition ${simFlow === 'login' ? 'bg-primary text-white' : 'border border-border text-secondary hover:bg-card-hover'}`}
+                  style={simFlow === 'login' ? { backgroundColor: 'var(--primary)', color: '#ffffff' } : { borderColor: 'var(--border)' }}
                 >
                   Flujo de Login
                 </button>
                 <button 
                   onClick={() => resetSimulator('pedido')}
-                  className={`px-4 py-2.5 rounded-xl font-semibold text-sm transition ${simFlow === 'pedido' ? 'bg-primary text-black' : 'border border-border text-secondary hover:bg-card-hover'}`}
-                  style={simFlow === 'pedido' ? { backgroundColor: 'var(--primary)', color: '#000' } : { borderColor: 'var(--border)' }}
+                  className={`px-4 py-2.5 rounded-xl font-semibold text-sm transition ${simFlow === 'pedido' ? 'bg-primary text-white' : 'border border-border text-secondary hover:bg-card-hover'}`}
+                  style={simFlow === 'pedido' ? { backgroundColor: 'var(--primary)', color: '#ffffff' } : { borderColor: 'var(--border)' }}
                 >
                   Flujo de Comandas
                 </button>
                 <button 
                   onClick={() => resetSimulator('liberar')}
-                  className={`px-4 py-2.5 rounded-xl font-semibold text-sm transition ${simFlow === 'liberar' ? 'bg-primary text-black' : 'border border-border text-secondary hover:bg-card-hover'}`}
-                  style={simFlow === 'liberar' ? { backgroundColor: 'var(--primary)', color: '#000' } : { borderColor: 'var(--border)' }}
+                  className={`px-4 py-2.5 rounded-xl font-semibold text-sm transition ${simFlow === 'liberar' ? 'bg-primary text-white' : 'border border-border text-secondary hover:bg-card-hover'}`}
+                  style={simFlow === 'liberar' ? { backgroundColor: 'var(--primary)', color: '#ffffff' } : { borderColor: 'var(--border)' }}
                 >
                   Liberar Mesa
                 </button>
                 <button 
                   onClick={() => resetSimulator('abm')}
-                  className={`px-4 py-2.5 rounded-xl font-semibold text-sm transition ${simFlow === 'abm' ? 'bg-primary text-black' : 'border border-border text-secondary hover:bg-card-hover'}`}
-                  style={simFlow === 'abm' ? { backgroundColor: 'var(--primary)', color: '#000' } : { borderColor: 'var(--border)' }}
+                  className={`px-4 py-2.5 rounded-xl font-semibold text-sm transition ${simFlow === 'abm' ? 'bg-primary text-white' : 'border border-border text-secondary hover:bg-card-hover'}`}
+                  style={simFlow === 'abm' ? { backgroundColor: 'var(--primary)', color: '#ffffff' } : { borderColor: 'var(--border)' }}
                 >
                   ABM de Productos
                 </button>
@@ -2902,8 +4523,8 @@ public boolean desactivar(int idProducto) throws SQLException {
                         className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all ${idx === simStep ? 'bg-primary-glow border-primary text-white font-medium' : 'border-border text-secondary hover:bg-card-hover'}`}
                         style={idx === simStep ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-glow)' } : { borderColor: 'var(--border)' }}
                       >
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${idx === simStep ? 'bg-primary text-black' : 'bg-code-bg text-secondary'}`}
-                             style={idx === simStep ? { backgroundColor: 'var(--primary)', color: '#000' } : { backgroundColor: 'var(--code-bg)' }}>
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center border ${idx === simStep ? 'bg-primary text-white border-primary' : 'bg-card text-secondary border-border'}`}
+                             style={idx === simStep ? { backgroundColor: 'var(--primary)', color: '#ffffff', borderColor: 'var(--primary)' } : { backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                           <StepIcon className="w-4 h-4" />
                         </div>
                         <div className="flex-1 min-w-0">
@@ -2927,7 +4548,7 @@ public boolean desactivar(int idProducto) throws SQLException {
                       {flows[simFlow][simStep].actor}
                     </h3>
                   </div>
-                  <span className="text-xs bg-code-bg px-3 py-1 rounded-md font-mono text-secondary" style={{ backgroundColor: 'var(--code-bg)', color: 'var(--text-secondary)' }}>
+                  <span className="text-xs bg-card border border-border px-3 py-1 rounded-md font-mono text-secondary" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
                     {flows[simFlow][simStep].title}
                   </span>
                 </div>
@@ -2970,7 +4591,7 @@ public boolean desactivar(int idProducto) throws SQLException {
                   {/* Right Column: UI Interface capture */}
                   <div className="space-y-3">
                     <p className="text-xs text-muted font-bold font-mono uppercase" style={{ color: 'var(--text-muted)' }}>Captura de Interfaz de Usuario:</p>
-                    <div className="bg-code-bg rounded-xl border border-border overflow-hidden relative shadow-md flex items-center justify-center p-2" style={{ backgroundColor: 'var(--code-bg)', borderColor: 'var(--border)' }}>
+                    <div className="bg-card rounded-xl border border-border overflow-hidden relative shadow-md flex items-center justify-center p-2" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                       <img
                         src={`/imgsistema/${flows[simFlow][simStep].image}`}
                         alt={flows[simFlow][simStep].title}
@@ -3007,8 +4628,8 @@ public boolean desactivar(int idProducto) throws SQLException {
                   <button 
                     disabled={simStep === flows[simFlow].length - 1}
                     onClick={() => setSimStep(p => Math.min(flows[simFlow].length - 1, p + 1))}
-                    className="bg-primary hover:bg-primary-hover text-black px-4 py-2 rounded-xl text-sm font-semibold transition"
-                    style={{ backgroundColor: 'var(--primary)', color: '#000' }}
+                    className="bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-xl text-sm font-semibold transition"
+                    style={{ backgroundColor: 'var(--primary)', color: '#ffffff' }}
                   >
                     Siguiente Paso
                   </button>
