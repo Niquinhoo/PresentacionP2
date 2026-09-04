@@ -1741,6 +1741,69 @@ public void beforeAll(ExtensionContext context) {
   }
 };
 
+const TEST_EXPLANATION_EXAMPLES = [
+  {
+    id: 'descontar-stock',
+    label: 'Caso válido / unitario',
+    title: 'Descontar stock con precisión',
+    file: 'ProductoServiceTest.java',
+    intro: 'El Service real aplica la regla de negocio y el DAO queda simulado para no usar una base real.',
+    steps: [
+      { label: 'Arrange', title: 'Preparar', detail: 'Producto Clásica con stock inicial 5. Mockito programa la respuesta del DAO.' },
+      { label: 'Act', title: 'Ejecutar', detail: 'Se llama service.descontarStock(1, 2).' },
+      { label: 'Assert', title: 'Comprobar', detail: 'El mensaje coincide y el stock pasa de 5 a 3.' },
+      { label: 'Verify', title: 'Auditar', detail: 'verify(dao).editar(producto) confirma que el cambio se envía a persistencia.' }
+    ],
+    code: `@Test
+void descontarStockActualizaCantidadExacta() {
+    Producto producto =
+        producto(1, "Clásica", "Hamburguesas", 5, true);
+
+    when(dao.getProductoPorId(1))
+        .thenReturn(producto);
+
+    when(dao.editar(producto))
+        .thenReturn("Producto editado correctamente");
+
+    assertEquals(
+        "Producto editado correctamente",
+        service.descontarStock(1, 2)
+    );
+
+    assertEquals(3, producto.getStock());
+    verify(dao).editar(producto);
+}`,
+    result: '5 - 2 = 3. Se valida la regla y también la persistencia solicitada.'
+  },
+  {
+    id: 'stock-insuficiente',
+    label: 'Caso de rechazo / unitario',
+    title: 'Detectar stock insuficiente',
+    file: 'ProductoServiceTest.java',
+    intro: 'El test cubre una regla negativa: la cantidad solicitada no puede superar el stock disponible.',
+    steps: [
+      { label: 'Arrange', title: 'Preparar', detail: 'Producto Clásica con 2 unidades. El DAO mock devuelve ese producto.' },
+      { label: 'Act', title: 'Ejecutar', detail: 'Se solicitan 3 unidades con validarStockDisponible(1, 3).' },
+      { label: 'Assert', title: 'Comprobar', detail: 'La respuesta debe ser exactamente Stock insuficiente para el producto Clásica.' },
+      { label: 'Idea clave', title: 'Proteger', detail: 'No se prueba solo el camino feliz: también se documenta cuándo la operación debe rechazarse.' }
+    ],
+    code: `@Test
+void validarStockDetectaFaltante() {
+    Producto producto =
+        producto(1, "Clásica", "Hamburguesas", 2, true);
+
+    when(dao.getProductoPorId(1))
+        .thenReturn(producto);
+
+    assertEquals(
+        "Stock insuficiente para el producto Clásica",
+        service.validarStockDisponible(1, 3)
+    );
+}`,
+    result: '2 < 3. El Service detecta el faltante y devuelve el mensaje esperado.'
+  }
+];
+
 const TEST_BASELINE_OUTPUT = [
   '$ resumen de ejecución del Backend',
   '[Surefire] 7 clases unitarias | 44 tests | 0 fallos',
@@ -3833,6 +3896,14 @@ public boolean desactivar(int idProducto) throws SQLException {
               </div>
             </section>
 
+            <section className="testing-coverage-reading" aria-label="Cómo leer los resultados">
+              <div>
+                <span className="testing-suite-label">Cómo leer los números</span>
+                <strong>83 de 83 aprobados no es lo mismo que 77,5% de cobertura.</strong>
+              </div>
+              <p><b>100% aprobados</b> indica que todos los tests terminaron correctamente. <b>77,5% de líneas</b> indica cuánto código recorrieron esos tests según JaCoCo.</p>
+            </section>
+
             <section className="testing-section" aria-labelledby="testing-suites-title">
               <div className="testing-section-heading">
                 <h4 id="testing-suites-title">Dos suites, dos preguntas</h4>
@@ -3918,6 +3989,54 @@ public boolean desactivar(int idProducto) throws SQLException {
                   <h5>Limpiar</h5>
                   <p>Eliminar los datos creados para repetir el caso sin residuos.</p>
                 </article>
+              </div>
+            </section>
+
+            <section className="testing-section testing-example-section" aria-labelledby="testing-example-title">
+              <div className="testing-section-heading">
+                <h4 id="testing-example-title">Dos tests para explicarlo con código</h4>
+                <p>Primero se prepara el escenario, después se ejecuta el método real y al final se comprueba qué resultado y qué colaboración eran correctos.</p>
+              </div>
+
+              <div className="testing-example-grid">
+                {TEST_EXPLANATION_EXAMPLES.map(example => (
+                  <article className="testing-example-card" key={example.id}>
+                    <header className="testing-example-header">
+                      <div>
+                        <span className="testing-suite-label">{example.label}</span>
+                        <h5>{example.title}</h5>
+                      </div>
+                      <code>{example.file}</code>
+                    </header>
+
+                    <p className="testing-example-intro">{example.intro}</p>
+
+                    <ol className="testing-example-flow" aria-label={`Flujo del test: ${example.title}`}>
+                      {example.steps.map(step => (
+                        <li key={step.label}>
+                          <span className="testing-example-step-label">{step.label}</span>
+                          <div>
+                            <strong>{step.title}</strong>
+                            <p>{step.detail}</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+
+                    <div className="testing-example-code">
+                      <div className="testing-code-header">
+                        <span>Extracto real resumido</span>
+                        <span>Java</span>
+                      </div>
+                      <pre><code>{example.code}</code></pre>
+                    </div>
+
+                    <div className="testing-example-result">
+                      <CheckCheck className="testing-icon" />
+                      <span>{example.result}</span>
+                    </div>
+                  </article>
+                ))}
               </div>
             </section>
 
